@@ -1,27 +1,29 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 	"time"
+
+	"github.com/labstack/echo/v4"
 )
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		w.Write([]byte(time.Now().String()))
-		return
-	default:
-		http.Error(w, "Not Allowed Method", http.StatusNotAcceptable)
-		return
-	}
+func timeHandler(c echo.Context) error {
+	return c.String(http.StatusOK, time.Now().String())
+}
+
+func mw(next echo.HandlerFunc) echo.HandlerFunc {
+	return nil
 }
 
 func main() {
-	http.HandleFunc("/time", handler)
+	e := echo.New()
 
-	err := http.ListenAndServe(":80", nil)
-	if err != nil {
-		fmt.Println("Ошибка запуска сервера:", err)
+	e.Use()
+
+	e.GET("/time", timeHandler)
+
+	if err := e.Start(":8080"); err != nil {
+		log.Fatalf("Error starting server: %v", err)
 	}
 }
