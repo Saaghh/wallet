@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 type APIServer struct {
 	router *chi.Mux
 	cfg    Config
+	server *http.Server
 }
 
 type Config struct {
@@ -24,12 +26,22 @@ func New(cfg Config) *APIServer {
 	}
 }
 
-func (s *APIServer) Run() error {
+func (s *APIServer) Run(ctx context.Context) error {
 	s.configRouter()
 
 	zap.L().Info("api server successfully started")
 
-	return http.ListenAndServe(s.cfg.Port, s.router)
+	go func() {
+		<-ctx.Done()
+		s.server.Close()
+	}()
+
+	s.server = &http.Server{
+		Addr:    s.cfg.Port,
+		Handler: s.router,
+	}
+
+	return s.server.ListenAndServe()
 }
 
 func (s *APIServer) configRouter() {
