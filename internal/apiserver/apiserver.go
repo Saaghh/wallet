@@ -38,6 +38,9 @@ func (s *APIServer) Run(ctx context.Context) error {
 		Addr:              s.cfg.Port,
 		Handler:           s.router,
 		ReadHeaderTimeout: 5 * time.Second,
+		Addr:              s.cfg.Port,
+		Handler:           s.router,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	if err := s.server.ListenAndServe(); err != nil {
