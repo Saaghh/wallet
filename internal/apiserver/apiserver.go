@@ -37,11 +37,16 @@ func (s *APIServer) Run(ctx context.Context) error {
 	}()
 
 	s.server = &http.Server{
-		Addr:    s.cfg.Port,
-		Handler: s.router,
+		Addr:              s.cfg.Port,
+		Handler:           s.router,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	return s.server.ListenAndServe()
+	if err := s.server.ListenAndServe(); err != nil {
+		zap.L().Panic("error starting server")
+	}
+
+	return nil
 }
 
 func (s *APIServer) configRouter() {
