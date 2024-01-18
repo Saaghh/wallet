@@ -1,11 +1,11 @@
-package apiserver
+package config
 
 type Config struct {
 	Port     string
 	LogLevel string
 }
 
-func NewConfig() *Config {
+func New() *Config {
 	return &Config{
 		Port:     ":8080",
 		LogLevel: "debug",
