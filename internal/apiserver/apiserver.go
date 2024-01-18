@@ -23,7 +23,6 @@ func New(config *Config) *APIserver {
 }
 
 func (s *APIserver) Start() error {
-
 	if err := s.configLogger(); err != nil {
 		return err
 	}
@@ -38,7 +37,7 @@ func (s *APIserver) Start() error {
 func (s *APIserver) configLogger() error {
 	level, err := logrus.ParseLevel(s.config.LogLevel)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	s.logger.SetLevel(level)
@@ -53,7 +52,9 @@ func (s *APIserver) configRouter() {
 func (s *APIserver) handleTime(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(time.Now().String()))
+		if _, err := w.Write([]byte(time.Now().String())); err != nil {
+			panic(err)
+		}
 
 		return
 	}
