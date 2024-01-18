@@ -29,19 +29,24 @@ func New(cfg Config) *APIServer {
 func (s *APIServer) Run(ctx context.Context) error {
 	s.configRouter()
 
-	zap.L().Info("api server successfully started")
-
 	go func() {
 		<-ctx.Done()
 		s.server.Close()
 	}()
 
 	s.server = &http.Server{
-		Addr:    s.cfg.Port,
-		Handler: s.router,
+		Addr:              s.cfg.Port,
+		Handler:           s.router,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	return s.server.ListenAndServe()
+	if err := s.server.ListenAndServe(); err != nil {
+		zap.L().Panic("error starting server")
+	}
+
+	zap.L().Info("api server successfully started")
+
+	return nil
 }
 
 func (s *APIServer) configRouter() {
