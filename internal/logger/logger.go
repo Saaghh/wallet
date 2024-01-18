@@ -1,14 +1,11 @@
 package logger
 
-import "github.com/sirupsen/logrus"
+import (
+	"go.uber.org/zap"
+)
 
-func InitLogger(logLevel string) error {
-	level, err := logrus.ParseLevel(logLevel)
-	if err != nil {
-		return err
-	}
+func InitLogger() {
+	logger := zap.Must(zap.NewDevelopment())
 
-	logrus.SetLevel(level)
-
-	return nil
+	zap.ReplaceGlobals(logger)
 }

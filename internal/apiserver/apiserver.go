@@ -5,19 +5,19 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type APIServer struct {
 	router *chi.Mux
-	cfg    APIServerConfig
+	cfg    Config
 }
 
-type APIServerConfig struct {
+type Config struct {
 	Port string
 }
 
-func New(cfg APIServerConfig) *APIServer {
+func New(cfg Config) *APIServer {
 	return &APIServer{
 		cfg:    cfg,
 		router: chi.NewRouter(),
@@ -27,7 +27,7 @@ func New(cfg APIServerConfig) *APIServer {
 func (s *APIServer) Run() error {
 	s.configRouter()
 
-	logrus.Info("api server successfully started")
+	zap.L().Info("api server successfully started")
 
 	return http.ListenAndServe(s.cfg.Port, s.router)
 }
@@ -41,7 +41,7 @@ func (s *APIServer) handleTime(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 
 		if _, err := w.Write([]byte(time.Now().String())); err != nil {
-			logrus.Panic(err)
+			zap.L().Panic(err.Error())
 		}
 
 		return
