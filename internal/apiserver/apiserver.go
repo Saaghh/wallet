@@ -2,11 +2,12 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"go.uber.org/zap"
+	log "go.uber.org/zap"
 )
 
 type APIServer struct {
@@ -27,11 +28,14 @@ func New(cfg Config) *APIServer {
 }
 
 func (s *APIServer) Run(ctx context.Context) error {
+	log.L().Info("starting api server")
+
 	s.configRouter()
 
 	go func() {
 		<-ctx.Done()
 		s.server.Close()
+		log.L().Info("server successfully stoped")
 	}()
 
 	s.server = &http.Server{
@@ -40,11 +44,11 @@ func (s *APIServer) Run(ctx context.Context) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	if err := s.server.ListenAndServe(); err != nil {
-		zap.L().Panic("error starting server")
-	}
+	log.L().Info("sever starting", log.String("port", s.cfg.Port))
 
-	zap.L().Info("api server successfully started")
+	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.L().Panic(err.Error())
+	}
 
 	return nil
 }
@@ -58,8 +62,10 @@ func (s *APIServer) handleTime(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 
 		if _, err := w.Write([]byte(time.Now().String())); err != nil {
-			zap.L().Panic(err.Error())
+			log.L().Panic(err.Error())
 		}
+
+		log.L().Info("sent /time", log.String("client", r.RemoteAddr))
 
 		return
 	}

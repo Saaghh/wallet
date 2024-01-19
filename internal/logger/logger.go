@@ -1,11 +1,13 @@
 package logger
 
 import (
-	"go.uber.org/zap"
+	log "go.uber.org/zap"
 )
 
 func InitLogger() {
-	logger := zap.Must(zap.NewDevelopment())
+	logger := log.Must(log.NewDevelopment())
 
-	zap.ReplaceGlobals(logger)
+	log.ReplaceGlobals(logger)
+
+	log.L().Info("successful logger initialization")
 }
