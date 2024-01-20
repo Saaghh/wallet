@@ -1,13 +1,23 @@
 package logger
 
 import (
-	log "go.uber.org/zap"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"os"
 )
 
-func InitLogger() {
-	logger := log.Must(log.NewDevelopment())
+type Config struct {
+	Level string
+}
 
-	log.ReplaceGlobals(logger)
+func InitLogger(cfg Config) {
+	level, err := zap.ParseAtomicLevel(cfg.Level)
+	if err != nil {
+		panic(err)
+	}
+	config := zap.NewProductionEncoderConfig()
+	config.EncodeTime = zapcore.ISO8601TimeEncoder
+	zap.ReplaceGlobals(zap.New(zapcore.NewCore(zapcore.NewConsoleEncoder(config), os.Stdout, level)))
 
-	log.L().Info("successful logger initialization")
+	zap.L().Info("successful logger initialization")
 }
