@@ -8,7 +8,7 @@ import (
 	"github.com/Saaghh/wallet/internal/apiserver"
 	"github.com/Saaghh/wallet/internal/config"
 	"github.com/Saaghh/wallet/internal/logger"
-	log "go.uber.org/zap"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -17,19 +17,15 @@ func main() {
 
 	cfg := config.New()
 
-	logger.InitLogger()
+	logger.InitLogger(logger.Config{Level: cfg.LogLevel})
 
-	defer func() {
-		if err := log.L().Sync(); err != nil {
-			panic(err)
-		}
-	}()
+	defer zap.L().Sync()
 
 	s := apiserver.New(apiserver.Config{
 		Port: cfg.Port,
 	})
 
 	if err := s.Run(ctx); err != nil {
-		log.L().Panic(err.Error())
+		zap.L().Panic(err.Error())
 	}
 }
