@@ -44,6 +44,7 @@ func (s *APIServer) Run(ctx context.Context) error {
 
 			return
 		}
+
 		zap.L().Info("server successfully stopped")
 	}()
 

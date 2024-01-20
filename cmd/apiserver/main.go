@@ -20,6 +20,7 @@ func main() {
 	logger.InitLogger(logger.Config{Level: cfg.LogLevel})
 
 	defer zap.L().Sync()
+	// TODO add error checking. Currently always errors with no obvious reason
 
 	s := apiserver.New(apiserver.Config{
 		Port: cfg.Port,
