@@ -8,6 +8,7 @@ import (
 	"github.com/Saaghh/wallet/internal/apiserver"
 	"github.com/Saaghh/wallet/internal/config"
 	"github.com/Saaghh/wallet/internal/logger"
+	"github.com/Saaghh/wallet/internal/service"
 	"go.uber.org/zap"
 )
 
@@ -16,6 +17,7 @@ func main() {
 	defer cancel()
 
 	cfg := config.New()
+	service := service.New()
 
 	logger.InitLogger(logger.Config{Level: cfg.LogLevel})
 
@@ -24,7 +26,7 @@ func main() {
 
 	s := apiserver.New(apiserver.Config{
 		Port: cfg.Port,
-	})
+	}, service)
 
 	if err := s.Run(ctx); err != nil {
 		zap.L().Panic(err.Error())
