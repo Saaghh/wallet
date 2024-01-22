@@ -1,9 +1,14 @@
-FROM golang:latest
+FROM golang:1.21.5 as builder
 
-WORKDIR /app
-
-COPY . .
+COPY . /src
+WORKDIR /src
 
 RUN make build
 
-CMD ["./bin/apiserver"]
+FROM alpine:3.14
+
+COPY --from=builder /src/bin /app/bin
+
+WORKDIR /app
+
+ENTRYPOINT ["./bin/apiserver"]
