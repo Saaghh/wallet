@@ -2,7 +2,6 @@ package apiserver
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -70,45 +69,4 @@ func (s *APIServer) Run(ctx context.Context) error {
 func (s *APIServer) configRouter() {
 	s.router.Get("/time", s.handleTime)
 	s.router.Get("/visitHistory", s.handleVisitHistory)
-}
-
-func (s *APIServer) handleTime(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		w.WriteHeader(http.StatusOK)
-
-		if _, err := w.Write([]byte(time.Now().String())); err != nil {
-			zap.L().With(zap.Error(err)).Warn("handleTime/w.Write(...)")
-
-			return
-		}
-
-		s.service.SaveVisit(r.RemoteAddr)
-
-		zap.L().Info("sent /time", zap.String("client", r.RemoteAddr))
-
-		return
-	}
-}
-
-func (s *APIServer) handleVisitHistory(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		w.WriteHeader(http.StatusOK)
-
-		history, err := json.Marshal(s.service.GetVisitHistory())
-		if err != nil {
-			zap.L().With(zap.Error(err)).Warn("handleVisitHistory/json.Marshal(...)")
-
-			return
-		}
-
-		if _, err := w.Write(history); err != nil {
-			zap.L().With(zap.Error(err)).Warn("handleVisitHistory/w.Write(...)")
-
-			return
-		}
-
-		zap.L().Info("sent /visitHistory", zap.String("client", r.RemoteAddr))
-
-		return
-	}
 }
