@@ -1,13 +1,13 @@
 package config
 
 type Config struct {
-	Port     string
-	LogLevel string
+	BindAddress string
+	LogLevel    string
 }
 
 func New() *Config {
 	return &Config{
-		Port:     ":8080",
-		LogLevel: "debug",
+		BindAddress: ":8080",
+		LogLevel:    "debug",
 	}
 }

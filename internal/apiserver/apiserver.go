@@ -20,14 +20,21 @@ type APIServer struct {
 }
 
 type Config struct {
-	Port string
+	BindAddress string
 }
 
 func New(cfg Config, service *service.Service) *APIServer {
+
+	server := &http.Server{
+		Addr:              cfg.BindAddress,
+		Handler:           chi.NewRouter(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
 	return &APIServer{
 		cfg:     cfg,
-		router:  chi.NewRouter(),
 		service: service,
+		server:  server,
 	}
 }
 
@@ -51,13 +58,7 @@ func (s *APIServer) Run(ctx context.Context) error {
 		zap.L().Info("server successfully stopped")
 	}()
 
-	s.server = &http.Server{
-		Addr:              s.cfg.Port,
-		Handler:           s.router,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	zap.L().Info("sever starting", zap.String("port", s.cfg.Port))
+	zap.L().Info("sever starting", zap.String("port", s.cfg.BindAddress))
 
 	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("s.server.ListenAndServe(): %w", err)

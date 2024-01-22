@@ -25,7 +25,7 @@ func main() {
 	// TODO add error checking. Currently always errors with no obvious reason
 
 	s := apiserver.New(apiserver.Config{
-		Port: cfg.Port,
+		BindAddress: cfg.BindAddress,
 	}, service)
 
 	if err := s.Run(ctx); err != nil {

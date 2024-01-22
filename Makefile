@@ -12,7 +12,8 @@ lint: tidy fmt build
 	golangci-lint run
 
 serve:
-	go run ./cmd/apiserver/main.go
+	docker build -t wallet .
+	docker run -p 8080:8080 -d wallet
 
 .PHONY: build tidy fmt lint serve
 
