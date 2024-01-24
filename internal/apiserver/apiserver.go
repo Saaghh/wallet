@@ -25,13 +25,15 @@ type Config struct {
 
 func New(cfg Config, service *service.Service) *APIServer {
 
+	router := chi.NewRouter()
 	return &APIServer{
 		cfg:     cfg,
 		service: service,
-		router:  chi.NewRouter(),
+		router:  router,
 		server: &http.Server{
 			Addr:              cfg.BindAddress,
 			ReadHeaderTimeout: 5 * time.Second,
+			Handler:           router,
 		},
 	}
 }
@@ -50,8 +52,12 @@ func (s *APIServer) Run(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 
+		zap.L().Debug("closing server")
+
 		gfCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
+		zap.L().Debug("attempting graceful shutdown")
 
 		if err := s.server.Shutdown(gfCtx); err != nil {
 			zap.L().With(zap.Error(err)).Warn("failed to gracefully shutdown http server")
