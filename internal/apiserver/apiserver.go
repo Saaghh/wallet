@@ -25,23 +25,27 @@ type Config struct {
 
 func New(cfg Config, service *service.Service) *APIServer {
 
-	server := &http.Server{
-		Addr:              cfg.BindAddress,
-		Handler:           chi.NewRouter(),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
 	return &APIServer{
 		cfg:     cfg,
 		service: service,
-		server:  server,
+		router:  chi.NewRouter(),
+		server: &http.Server{
+			Addr:              cfg.BindAddress,
+			ReadHeaderTimeout: 5 * time.Second,
+		},
 	}
 }
 
 func (s *APIServer) Run(ctx context.Context) error {
 	zap.L().Info("starting api server")
 
+	if s.router == nil {
+		zap.L().Panic("router is nil")
+	}
+
 	s.configRouter()
+
+	zap.L().Debug("configured router")
 
 	go func() {
 		<-ctx.Done()
@@ -68,6 +72,11 @@ func (s *APIServer) Run(ctx context.Context) error {
 }
 
 func (s *APIServer) configRouter() {
+	zap.L().Debug("configuring router")
+
 	s.router.Get("/time", s.handleTime)
+	zap.L().Debug("configured /time")
 	s.router.Get("/visitHistory", s.handleVisitHistory)
+	zap.L().Debug("configured /visitHistory")
+
 }
