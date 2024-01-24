@@ -17,6 +17,7 @@ func main() {
 	defer cancel()
 
 	cfg := config.New()
+
 	service := service.New()
 
 	logger.InitLogger(logger.Config{Level: cfg.LogLevel})

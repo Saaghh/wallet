@@ -11,10 +11,18 @@ fmt:
 lint: tidy fmt build
 	golangci-lint run
 
-serve:
-	docker build -t wallet .
-	docker run -p 8080:8080 -d wallet
+serve: up
+	docker build -t wallet_apiserver .
+	docker run -p 8080:8080  --name wallet_apiserver -d wallet_apiserver
 
-.PHONY: build tidy fmt lint serve
+up: 
+	docker-compose up -d
 
-.DEFAULT_GOAL := build
+update: clearContainer serve
+
+clearContainer:
+	docker stop wallet_apiserver && docker rm wallet_apiserver
+
+.PHONY: build tidy fmt lint serve up update clearContainer
+
+.DEFAULT_GOAL := lint

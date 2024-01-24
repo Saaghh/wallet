@@ -5,7 +5,7 @@ WORKDIR /src
 
 RUN make build
 
-FROM alpine:3.14
+FROM debian:stable-slim
 
 COPY --from=builder /src/bin /app/bin
 
