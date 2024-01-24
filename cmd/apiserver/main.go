@@ -33,7 +33,3 @@ func main() {
 		zap.L().Panic(err.Error())
 	}
 }
-
-func configureStore(ctx context.Context, cfg config.Config) {
-
-}
