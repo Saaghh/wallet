@@ -2,7 +2,6 @@ package config
 
 import (
 	"github.com/ilyakaznacheev/cleanenv"
-	"go.uber.org/zap"
 )
 
 type Config struct {
@@ -19,12 +18,9 @@ type Config struct {
 func New() *Config {
 	cfg := Config{}
 
-	zap.L().Debug(cfg.BindAddress)
-	zap.L().Debug(cfg.LogLevel)
-
 	err := cleanenv.ReadEnv(&cfg)
 	if err != nil {
-		zap.L().With(zap.Error(err)).Warn("using standart config values")
+		panic("error getting config")
 	}
 
 	return &cfg

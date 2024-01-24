@@ -13,16 +13,16 @@ lint: tidy fmt build
 
 serve: up
 	docker build -t wallet_apiserver .
-	docker run -p 8080:8080  --name wallet_apiserver wallet_apiserver
+	docker run -p 8080:8080  --name wallet_apiserver -d wallet_apiserver
 
 up: 
 	docker-compose up -d
 
-update: 
-	docker build -t wallet .
-	docker stop wallet_apiserver && docker rm wallet_apiserver
-	docker run -p 8080:8080  --name wallet_apiserver wallet
-	
-.PHONY: build tidy fmt lint serve up update
+update: clearContainer serve
 
-.DEFAULT_GOAL := build
+clearContainer:
+	docker stop wallet_apiserver && docker rm wallet_apiserver
+
+.PHONY: build tidy fmt lint serve up update clearContainer
+
+.DEFAULT_GOAL := lint

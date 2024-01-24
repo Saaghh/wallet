@@ -73,10 +73,6 @@ func (s *APIServer) Run(ctx context.Context) error {
 
 func (s *APIServer) configRouter() {
 	zap.L().Debug("configuring router")
-
 	s.router.Get("/time", s.handleTime)
-	zap.L().Debug("configured /time")
 	s.router.Get("/visitHistory", s.handleVisitHistory)
-	zap.L().Debug("configured /visitHistory")
-
 }
