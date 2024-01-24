@@ -10,7 +10,7 @@ type Config struct {
 
 	PGHost     string `env:"PG_HOST" env-default:"localhost"`
 	PGPort     string `env:"PG_PORT" env-default:"5432"`
-	PGDatebase string `env:"PG_DATABASE" env-default:"postgres"`
+	PGDatabase string `env:"PG_DATABASE" env-default:"postgres"`
 	PGUser     string `env:"PG_USER" env-default:"user"`
 	PGPassword string `env:"PG_PASSWORD" env-default:"secret"`
 }
