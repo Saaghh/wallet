@@ -1,5 +1,5 @@
 build:
-	go build -o ./bin/apiserver ./cmd/apiserver
+	go build -o ./bin/apiserver.exe ./cmd/apiserver
 
 tidy:
 	go mod tidy
@@ -11,10 +11,13 @@ fmt:
 lint: tidy fmt build
 	golangci-lint run
 
-serve:
+serve: up
 	docker build -t wallet .
-	docker run -p 8080:8080 -d wallet
+	docker run -p 8080:8080 wallet
 
-.PHONY: build tidy fmt lint serve
+up: 
+	docker-compose up -d
+	
+.PHONY: build tidy fmt lint serve up
 
 .DEFAULT_GOAL := build
