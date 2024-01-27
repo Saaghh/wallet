@@ -9,6 +9,7 @@ import (
 
 	"github.com/Saaghh/wallet/internal/config"
 	"github.com/jackc/pgx/v5"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	migrate "github.com/rubenv/sql-migrate"
 	"go.uber.org/zap"
 )
@@ -21,16 +22,18 @@ type Postgres struct {
 //go:embed migrations
 var migrations embed.FS
 
-func New(ctx context.Context, cfg config.Config) (*Postgres, error) {
+func New(ctx context.Context, cfg *config.Config) (*Postgres, error) {
 	urlScheme := url.URL{
-		Scheme:   "postgres",
-		User:     url.UserPassword(cfg.PGUser, cfg.PGPassword),
-		Host:     fmt.Sprintf("%s:%s", cfg.PGHost, cfg.PGPort),
-		Path:     cfg.PGDatabase,
-		RawQuery: (&url.Values{"sslmode": []string{"disable"}}).Encode(),
+		Scheme: "postgres",
+		User:   url.UserPassword(cfg.PGUser, cfg.PGPassword),
+		Host:   fmt.Sprintf("%s:%s", cfg.PGHost, cfg.PGPort),
+		Path:   cfg.PGDatabase,
+		//RawQuery: (&url.Values{"sslmode": []string{"disable"}}).Encode(),
 	}
 
 	dsn := urlScheme.String()
+
+	zap.L().Debug(fmt.Sprintf("dsn: %s", dsn))
 
 	db, err := pgx.Connect(ctx, dsn)
 	if err != nil {

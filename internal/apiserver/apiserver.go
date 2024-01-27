@@ -41,10 +41,6 @@ func (s *APIServer) Run(ctx context.Context) error {
 	zap.L().Info("starting api server")
 	defer zap.L().Info("server stopped")
 
-	if s.router == nil {
-		zap.L().Panic("router is nil")
-	}
-
 	s.configRouter()
 
 	zap.L().Debug("configured router")

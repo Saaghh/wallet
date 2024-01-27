@@ -7,7 +7,7 @@ RUN make build
 
 FROM debian:stable-slim
 
-COPY --from=builder /src/bin /app/bin
+COPY --from=builder /src/bin/apiserver /app/bin/apiserver
 
 WORKDIR /app
 

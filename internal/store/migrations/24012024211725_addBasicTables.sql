@@ -8,10 +8,9 @@ CREATE TABLE users (
 
 CREATE TABLE wallets (
     id bigserial not null primary key,
-    ownerID bigserial not null,
+    ownerID bigserial not null references users(id),
     currency varchar not null,
-    balanceFull integer,
-    balancePartial integer,
+    balance numeric,
     createdDate date,
     modifiedDate date
 );
