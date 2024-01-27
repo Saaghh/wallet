@@ -23,12 +23,11 @@ func (s *APIServer) handleTime(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) handleVisitHistory(w http.ResponseWriter, r *http.Request) {
-
 	history, err := json.Marshal(s.service.GetVisitHistory())
 	if err != nil {
 		zap.L().With(zap.Error(err)).Warn("handleVisitHistory/json.Marshal(...)")
 
-		http.Error(w, "error mashaling data", http.StatusInternalServerError)
+		http.Error(w, "error marshaling data", http.StatusInternalServerError)
 
 		return
 	}

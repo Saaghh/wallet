@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"net/url"
 
 	"github.com/Saaghh/wallet/internal/config"
 	"github.com/jackc/pgx/v5"
@@ -21,7 +22,15 @@ type Postgres struct {
 var migrations embed.FS
 
 func New(ctx context.Context, cfg config.Config) (*Postgres, error) {
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", cfg.PGUser, cfg.PGPassword, cfg.PGHost, cfg.PGPort, cfg.PGDatabase)
+	urlScheme := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(cfg.PGUser, cfg.PGPassword),
+		Host:     fmt.Sprintf("%s:%s", cfg.PGHost, cfg.PGPort),
+		Path:     cfg.PGDatabase,
+		RawQuery: (&url.Values{"sslmode": []string{"disable"}}).Encode(),
+	}
+
+	dsn := urlScheme.String()
 
 	db, err := pgx.Connect(ctx, dsn)
 	if err != nil {

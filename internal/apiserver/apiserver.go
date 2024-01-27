@@ -24,7 +24,6 @@ type Config struct {
 }
 
 func New(cfg Config, service *service.Service) *APIServer {
-
 	router := chi.NewRouter()
 	return &APIServer{
 		cfg:     cfg,
@@ -40,6 +39,7 @@ func New(cfg Config, service *service.Service) *APIServer {
 
 func (s *APIServer) Run(ctx context.Context) error {
 	zap.L().Info("starting api server")
+	defer zap.L().Info("server stopped")
 
 	if s.router == nil {
 		zap.L().Panic("router is nil")
@@ -65,7 +65,6 @@ func (s *APIServer) Run(ctx context.Context) error {
 			return
 		}
 
-		zap.L().Info("server successfully stopped")
 	}()
 
 	zap.L().Info("sever starting", zap.String("port", s.cfg.BindAddress))
