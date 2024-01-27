@@ -31,7 +31,7 @@ func main() {
 		zap.L().With(zap.Error(err)).Panic("str.Migrate")
 	}
 
-	zap.L().Debug("successful migration")
+	zap.L().Info("successful migration")
 
 	srv := service.New(str)
 

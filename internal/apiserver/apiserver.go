@@ -76,4 +76,9 @@ func (s *APIServer) configRouter() {
 	zap.L().Debug("configuring router")
 	s.router.Get("/time", s.handleTime)
 	s.router.Get("/visitHistory", s.handleVisitHistory)
+
+	s.router.Post("/user", s.handleCreateUser)
+
+	s.router.Post("/wallet", s.handleCreateWallet)
+	s.router.Get("/wallet", s.handleGetWallet)
 }
