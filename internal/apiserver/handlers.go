@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/Saaghh/wallet/internal/model"
 	"net/http"
-	"strconv"
 	"time"
 
 	"go.uber.org/zap"
@@ -47,19 +46,20 @@ func (s *APIServer) handleVisitHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) handleCreateUser(w http.ResponseWriter, r *http.Request) {
-	err := r.ParseForm()
-	if err != nil {
-		http.Error(w, "Failed to parse form data", http.StatusBadRequest)
-		zap.L().With(zap.Error(err)).Info("handleUserCreate/r.ParseForm()")
+
+	var rUser model.User
+
+	if err := json.NewDecoder(r.Body).Decode(&rUser); err != nil {
+		http.Error(w, "failed read body", http.StatusBadRequest)
+		zap.L().With(zap.Error(err)).Info("handleCreateUser/json.NewDecoder(r.Body).Decode(&rUser)")
 		return
 	}
 
-	email := r.Form.Get("email")
-	zap.L().Debug(fmt.Sprintf("handleCreateUser/email: %s", email))
+	zap.L().Debug(fmt.Sprintf("handleCreateUser/email: %s", rUser.Email))
 
-	user, err := s.service.CreateUser(r.Context(), email)
+	user, err := s.service.CreateUser(r.Context(), rUser.Email)
 	if err != nil {
-		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		http.Error(w, "failed to create user", http.StatusInternalServerError)
 		zap.L().With(zap.Error(err)).Info("handleUserCreate/s.service.CreateUser(r.Context(), email)")
 		return
 	}
@@ -71,7 +71,8 @@ func (s *APIServer) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 
 	if _, err := w.Write(result); err != nil {
 		zap.L().With(zap.Error(err)).Warn("handleCreateUser/w.Write(...)")
@@ -83,28 +84,19 @@ func (s *APIServer) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) handleCreateWallet(w http.ResponseWriter, r *http.Request) {
-	err := r.ParseForm()
-	if err != nil {
-		http.Error(w, "Failed to parse form data", http.StatusBadRequest)
-		zap.L().With(zap.Error(err)).Info("handleCreateWallet/r.ParseForm()")
-		return
-	}
+	var rWallet model.Wallet
 
-	currency := r.Form.Get("currency")
-	ownerIdString := r.Form.Get("owner-id")
-
-	ownerID, err := strconv.ParseInt(ownerIdString, 10, 64)
-	if err != nil {
-		http.Error(w, "invalid owner id", http.StatusBadRequest)
-		zap.L().With(zap.Error(err)).Info("handleCreateWallet/strconv.Atoi(ownerIdString)")
+	if err := json.NewDecoder(r.Body).Decode(&rWallet); err != nil {
+		http.Error(w, "failed read body", http.StatusBadRequest)
+		zap.L().With(zap.Error(err)).Info("handleCreateWallet/json.NewDecoder(r.Body).Decode(&rWallet)")
 		return
 	}
 
 	user := model.User{
-		ID: ownerID,
+		ID: rWallet.OwnerID,
 	}
 
-	wallet, err := s.service.CreateWallet(r.Context(), user, currency)
+	wallet, err := s.service.CreateWallet(r.Context(), user, rWallet.Currency)
 	if err != nil {
 		http.Error(w, "Failed to create wallet", http.StatusInternalServerError)
 		zap.L().With(zap.Error(err)).Info("handleCreateWallet/s.service.CreateWallet(r.Context(), user, currency)")
@@ -118,7 +110,8 @@ func (s *APIServer) handleCreateWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 
 	if _, err := w.Write(result); err != nil {
 		zap.L().With(zap.Error(err)).Warn("handleCreateWallet/w.Write(...)")
@@ -129,24 +122,15 @@ func (s *APIServer) handleCreateWallet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) handleGetWallet(w http.ResponseWriter, r *http.Request) {
-	if !r.URL.Query().Has("wallet-id") {
-		http.Error(w, "Wallet-id not found", http.StatusBadRequest)
-		zap.L().Info("handleGetWallet/r.ParseForm()")
+	var rWallet model.Wallet
+
+	if err := json.NewDecoder(r.Body).Decode(&rWallet); err != nil {
+		http.Error(w, "failed read body", http.StatusBadRequest)
+		zap.L().With(zap.Error(err)).Info("handleGetWallet/json.NewDecoder(r.Body).Decode(&rWallet)")
 		return
 	}
 
-	walletIdString := r.URL.Query().Get("wallet-id")
-
-	zap.L().Debug(fmt.Sprintf("handleGetWallet/walletIdString: %s", walletIdString))
-
-	walletID, err := strconv.ParseInt(walletIdString, 10, 64)
-	if err != nil {
-		http.Error(w, "invalid wallet id", http.StatusBadRequest)
-		zap.L().With(zap.Error(err)).Info("handleGetWallet/strconv.Atoi(ownerIdString)")
-		return
-	}
-
-	wallet, err := s.service.GetWallet(r.Context(), walletID)
+	wallet, err := s.service.GetWallet(r.Context(), rWallet.ID)
 	if err != nil {
 		http.Error(w, "Failed to get wallet", http.StatusInternalServerError)
 		zap.L().With(zap.Error(err)).Info("handleGetWallet/s.service.GetWallet(r.Context(), walletID))")
@@ -160,6 +144,7 @@ func (s *APIServer) handleGetWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write(result); err != nil {
