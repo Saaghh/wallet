@@ -49,7 +49,7 @@ func (s *APIServer) handleGetWallet(w http.ResponseWriter, r *http.Request) {
 	var rWallet model.Wallet
 
 	if err := json.NewDecoder(r.Body).Decode(&rWallet); err != nil {
-		http.Error(w, "failed read body", http.StatusBadRequest)
+		http.Error(w, "failed to read body", http.StatusBadRequest)
 		zap.L().With(zap.Error(err)).Info("handleGetWallet/json.NewDecoder(r.Body).Decode(&rWallet)")
 		return
 	}
@@ -77,5 +77,40 @@ func (s *APIServer) handleGetWallet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	zap.L().Info("successful GET:/wallet", zap.String("client", r.RemoteAddr))
+
+}
+
+func (s *APIServer) handleTransaction(w http.ResponseWriter, r *http.Request) {
+	var rTx model.Transaction
+
+	if err := json.NewDecoder(r.Body).Decode(&rTx); err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		zap.L().With(zap.Error(err)).Info("handleTransaction/json.NewDecoder(r.Body).Decode(&rWallet)")
+		return
+	}
+
+	tx, err := s.service.ExecuteTransaction(r.Context(), rTx)
+	if err != nil {
+		http.Error(w, "Failed to execute transaction", http.StatusInternalServerError)
+		zap.L().With(zap.Error(err)).Info("handleTransaction/s.service.ExecuteTransaction(r.Context(), rTx)")
+		return
+	}
+
+	result, err := json.Marshal(tx)
+	if err != nil {
+		http.Error(w, "error marshaling data", http.StatusInternalServerError)
+		zap.L().With(zap.Error(err)).Warn("handleTransaction/json.Marshal(...)")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if _, err := w.Write(result); err != nil {
+		zap.L().With(zap.Error(err)).Warn("handleTransaction/w.Write(...)")
+		return
+	}
+
+	zap.L().Info("successful POST:/transaction", zap.String("client", r.RemoteAddr))
 
 }

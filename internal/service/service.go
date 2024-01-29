@@ -11,6 +11,7 @@ type store interface {
 	Migrate(direction migrate.MigrationDirection) error
 	GetWalletByID(ctx context.Context, walletID int64) (*model.Wallet, error)
 	CreateWallet(ctx context.Context, owner model.User, currency string) (*model.Wallet, error)
+	ExecuteTransaction(ctx context.Context, wtx model.Transaction) (*model.Transaction, error)
 }
 
 type Service struct {
@@ -39,4 +40,13 @@ func (s *Service) GetWallet(ctx context.Context, walletID int64) (*model.Wallet,
 	}
 
 	return wallet, nil
+}
+
+func (s *Service) ExecuteTransaction(ctx context.Context, wtx model.Transaction) (*model.Transaction, error) {
+	tx, err := s.db.ExecuteTransaction(ctx, wtx)
+	if err != nil {
+		return nil, fmt.Errorf("s.db.ExecuteTransaction(ctx, wtx): %w", err)
+	}
+
+	return tx, nil
 }

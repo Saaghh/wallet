@@ -15,6 +15,7 @@ import (
 type service interface {
 	CreateWallet(ctx context.Context, owner model.User, currency string) (*model.Wallet, error)
 	GetWallet(ctx context.Context, walletID int64) (*model.Wallet, error)
+	ExecuteTransaction(ctx context.Context, wtx model.Transaction) (*model.Transaction, error)
 }
 
 type APIServer struct {
@@ -82,4 +83,5 @@ func (s *APIServer) configRouter() {
 
 	s.router.Post("/wallet", s.handleCreateWallet)
 	s.router.Get("/wallet", s.handleGetWallet)
+	s.router.Post("/transaction", s.handleTransaction)
 }
