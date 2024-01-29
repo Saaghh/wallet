@@ -63,26 +63,6 @@ func (p *Postgres) GetWalletByID(ctx context.Context, walletID int64) (*model.Wa
 	return wallet, nil
 }
 
-func (p *Postgres) createTransaction(ctx context.Context, wtx model.Transaction) (*model.Transaction, error) {
-	query := `
-	INSERT INTO transactions (from_wallet_id, to_wallet_id, currency, balance)
-	VALUES ($1, $2, $3, $4)
-	returning id, created_at
-`
-	err := p.db.QueryRow(
-		ctx,
-		query,
-		wtx.FromWalletID, wtx.ToWalletID, wtx.Currency, wtx.Balance,
-	).Scan(
-		&wtx.ID,
-		&wtx.CreatedAt,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("p.db.QueryRow(): %w", err)
-	}
-	return &wtx, nil
-}
-
 func (p *Postgres) ExecuteTransaction(ctx context.Context, wtx model.Transaction) (*model.Transaction, error) {
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
@@ -96,36 +76,51 @@ func (p *Postgres) ExecuteTransaction(ctx context.Context, wtx model.Transaction
 	}()
 
 	//Saving transaction to DB
-	savedTX, err := p.createTransaction(ctx, wtx)
+	query := `
+	INSERT INTO transactions (from_wallet_id, to_wallet_id, currency, balance)
+	VALUES ($1, $2, $3, $4)
+	returning id, created_at
+`
+	err = tx.QueryRow(
+		ctx,
+		query,
+		wtx.FromWalletID, wtx.ToWalletID, wtx.Currency, wtx.Balance,
+	).Scan(
+		&wtx.ID,
+		&wtx.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("p.db.QueryRow(): %w", err)
+	}
 
 	//Checking Balance and currency
-	fromWallet, err := p.GetWalletByID(ctx, savedTX.FromWalletID)
+	fromWallet, err := p.GetWalletByID(ctx, wtx.FromWalletID)
 	if err != nil {
-		return nil, fmt.Errorf("p.GetWalletByID(ctx, savedTX.FromWalletID): %w", err)
+		return nil, fmt.Errorf("p.GetWalletByID(ctx, wtx.FromWalletID): %w", err)
 	}
-	if fromWallet.Currency != savedTX.Currency {
+	if fromWallet.Currency != wtx.Currency {
 		return nil, fmt.Errorf("wrong currency fromWallet")
 	}
-	if fromWallet.Balance < savedTX.Balance {
+	if fromWallet.Balance < wtx.Balance {
 		return nil, fmt.Errorf("not enough balance fromWallet")
 	}
 
-	toWallet, err := p.GetWalletByID(ctx, savedTX.ToWalletID)
+	toWallet, err := p.GetWalletByID(ctx, wtx.ToWalletID)
 	if err != nil {
-		return nil, fmt.Errorf("p.GetWalletByID(ctx, savedTX.ToWalletID): %w", err)
+		return nil, fmt.Errorf("p.GetWalletByID(ctx, wtx.ToWalletID): %w", err)
 	}
-	if toWallet.Currency != savedTX.Currency {
+	if toWallet.Currency != wtx.Currency {
 		return nil, fmt.Errorf("wrong currency toWallet")
 	}
 
 	//Moving Cash
-	query := `
+	query = `
 	UPDATE wallets
 	SET balance = $1, modified_at = $3
 	WHERE id = $2
 `
 
-	fromWallet.Balance -= savedTX.Balance
+	fromWallet.Balance -= wtx.Balance
 	fromWallet.ModifiedDate = time.Now()
 	_, err = tx.Exec(
 		ctx,
@@ -135,7 +130,7 @@ func (p *Postgres) ExecuteTransaction(ctx context.Context, wtx model.Transaction
 		return nil, fmt.Errorf("tx.Exec(ctx, query, fromWallet.Balance, fromWallet.ID): %w", err)
 	}
 
-	toWallet.Balance += savedTX.Balance
+	toWallet.Balance += wtx.Balance
 	toWallet.ModifiedDate = time.Now()
 	_, err = tx.Exec(
 		ctx,
@@ -152,16 +147,16 @@ func (p *Postgres) ExecuteTransaction(ctx context.Context, wtx model.Transaction
 	SET finished_at = $1
 	WHERE id = $2
 `
-	savedTX.FinishedAt = time.Now()
+	wtx.FinishedAt = time.Now()
 	_, err = tx.Exec(
 		ctx,
 		query,
-		savedTX.FinishedAt, savedTX.ID)
+		wtx.FinishedAt, wtx.ID)
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("tx.Commit(ctx): %w", err)
 	}
 
-	return savedTX, nil
+	return &wtx, nil
 
 }
