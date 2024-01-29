@@ -90,7 +90,9 @@ func (p *Postgres) ExecuteTransaction(ctx context.Context, wtx model.Transaction
 	}
 	defer func() {
 		err := tx.Rollback(ctx)
-		zap.L().With(zap.Error(err)).Warn("ExecuteTransaction/tx.Rollback(ctx)")
+		if err != nil {
+			zap.L().With(zap.Error(err)).Warn("ExecuteTransaction/tx.Rollback(ctx)")
+		}
 	}()
 
 	//Saving transaction to DB
@@ -119,24 +121,26 @@ func (p *Postgres) ExecuteTransaction(ctx context.Context, wtx model.Transaction
 	//Moving Cash
 	query := `
 	UPDATE wallets
-	SET balance = $1
+	SET balance = $1, modified_at = $3
 	WHERE id = $2
 `
 
 	fromWallet.Balance -= savedTX.Balance
+	fromWallet.ModifiedDate = time.Now()
 	_, err = tx.Exec(
 		ctx,
 		query,
-		fromWallet.Balance, fromWallet.ID)
+		fromWallet.Balance, fromWallet.ID, fromWallet.ModifiedDate)
 	if err != nil {
 		return nil, fmt.Errorf("tx.Exec(ctx, query, fromWallet.Balance, fromWallet.ID): %w", err)
 	}
 
 	toWallet.Balance += savedTX.Balance
+	toWallet.ModifiedDate = time.Now()
 	_, err = tx.Exec(
 		ctx,
 		query,
-		toWallet.Balance, toWallet.ID)
+		toWallet.Balance, toWallet.ID, toWallet.ModifiedDate)
 	if err != nil {
 		return nil, fmt.Errorf("tx.Exec(ctx, query, toWallet.Balance, toWallet.ID): %w", err)
 	}

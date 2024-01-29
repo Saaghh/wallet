@@ -15,9 +15,8 @@ import (
 )
 
 type Postgres struct {
-	db   *pgxpool.Conn
-	pool *pgxpool.Pool
-	dsn  string
+	db  *pgxpool.Pool
+	dsn string
 }
 
 //go:embed migrations
@@ -36,14 +35,9 @@ func New(ctx context.Context, cfg *config.Config) (*Postgres, error) {
 
 	zap.L().Debug(fmt.Sprintf("dsn: %s", dsn))
 
-	pool, err := pgxpool.New(ctx, dsn)
+	db, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("pgxpool.New(ctx, dsn): %w", err)
-	}
-
-	db, err := pool.Acquire(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("pool.Acquire(ctx): %w", err)
 	}
 
 	err = db.Ping(ctx)
@@ -54,9 +48,8 @@ func New(ctx context.Context, cfg *config.Config) (*Postgres, error) {
 	zap.L().Info("successfully connected to db")
 
 	return &Postgres{
-		db:   db,
-		dsn:  dsn,
-		pool: pool,
+		db:  db,
+		dsn: dsn,
 	}, nil
 }
 
