@@ -16,6 +16,9 @@ serve: up
 up: 
 	docker-compose up -d
 
-.PHONY: build tidy fmt lint serve up
+test: up
+	go test ./tests
+
+.PHONY: build tidy fmt lint serve up test
 
 .DEFAULT_GOAL := lint

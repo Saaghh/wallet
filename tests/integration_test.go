@@ -21,14 +21,12 @@ import (
 
 const (
 	walletEndpoint = "/wallet"
-	userEndpoint   = "/user"
 	bindAddr       = "http://localhost:8080"
 )
 
 type IntegrationTestSuite struct {
 	suite.Suite
 	ctx *context.Context
-	str *store.Postgres
 
 	correctUser   model.User
 	correctWallet model.Wallet
@@ -107,7 +105,7 @@ func (s *IntegrationTestSuite) sendRequest(ctx context.Context, method, endpoint
 	return resp
 }
 
-func (s *IntegrationTestSuite) TestUserCreation() {
+func (s *IntegrationTestSuite) TestWallet() {
 
 	s.Run("normal wallet creation", func() {
 		ctx := context.Background()

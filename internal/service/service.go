@@ -4,47 +4,23 @@ import (
 	"context"
 	"fmt"
 	"github.com/Saaghh/wallet/internal/model"
-	"github.com/Saaghh/wallet/internal/store"
+	migrate "github.com/rubenv/sql-migrate"
 )
 
+type store interface {
+	Migrate(direction migrate.MigrationDirection) error
+	GetWalletByID(ctx context.Context, walletID int64) (*model.Wallet, error)
+	CreateWallet(ctx context.Context, owner model.User, currency string) (*model.Wallet, error)
+}
+
 type Service struct {
-	visitHistory map[string]int
-	db           *store.Postgres
+	db store
 }
 
-func New(db *store.Postgres) *Service {
-	history := make(map[string]int)
-
+func New(db store) *Service {
 	return &Service{
-		visitHistory: history,
-		db:           db,
+		db: db,
 	}
-}
-
-func (s *Service) SaveVisit(addr string) {
-	s.visitHistory[addr]++
-}
-
-func (s *Service) GetVisitHistory() map[string]int {
-	return s.visitHistory
-}
-
-func (s *Service) CreateUser(ctx context.Context, email string) (*model.User, error) {
-	user, err := s.db.CreateUser(ctx, email)
-	if err != nil {
-		return nil, fmt.Errorf("s.db.CreateUser(email): %w", err)
-	}
-
-	return user, nil
-}
-
-func (s *Service) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
-	user, err := s.db.GetUserByEmail(ctx, email)
-	if err != nil {
-		return nil, fmt.Errorf("s.db.GetUserByEmail(email): %w", err)
-	}
-
-	return user, nil
 }
 
 func (s *Service) CreateWallet(ctx context.Context, owner model.User, currency string) (*model.Wallet, error) {

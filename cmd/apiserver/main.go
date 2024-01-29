@@ -35,8 +35,9 @@ func main() {
 
 	srv := service.New(str)
 
+	//no error handling for now
+	//check https://github.com/uber-go/zap/issues/991
 	defer zap.L().Sync()
-	// TODO add error checking. Currently always errors with no obvious reason
 
 	s := apiserver.New(apiserver.Config{
 		BindAddress: cfg.BindAddress,
