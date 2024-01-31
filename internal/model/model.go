@@ -5,26 +5,25 @@ import (
 )
 
 type Wallet struct {
-	ID           int64
-	OwnerID      int64
-	Currency     string
-	Balance      float64
-	CreatedDate  time.Time
-	ModifiedDate time.Time
+	ID           int64     `json:"id"`
+	OwnerID      int64     `json:"ownerID"`
+	Currency     string    `json:"currency"`
+	Balance      float64   `json:"balance"`
+	CreatedDate  time.Time `json:"createdDate"`
+	ModifiedDate time.Time `json:"modifiedDate"`
 }
 
 type User struct {
-	ID      int64
-	Email   string
-	RegDate time.Time
+	ID      int64     `json:"id"`
+	Email   string    `json:"email"`
+	RegDate time.Time `json:"regDate"`
 }
 
 type Transaction struct {
-	ID           int64
-	CreatedAt    time.Time
-	FinishedAt   time.Time
-	FromWalletID int64
-	ToWalletID   int64
-	Currency     string
-	Balance      float64
+	ID             int64     `json:"id"`
+	CreatedAt      time.Time `json:"createdAt"`
+	AgentWalletID  int64     `json:"agentWalletID"`
+	TargetWalletID int64     `json:"targetWalletID"`
+	Currency       string    `json:"currency"`
+	Balance        float64   `json:"balance"`
 }

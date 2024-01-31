@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Saaghh/wallet/internal/model"
 	"net/http"
 	"time"
 
+	"github.com/Saaghh/wallet/internal/model"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
@@ -15,7 +15,7 @@ import (
 type service interface {
 	CreateWallet(ctx context.Context, owner model.User, currency string) (*model.Wallet, error)
 	GetWallet(ctx context.Context, walletID int64) (*model.Wallet, error)
-	ExecuteTransaction(ctx context.Context, wtx model.Transaction) (*model.Transaction, error)
+	Transfer(ctx context.Context, wtx model.Transaction) (int64, error)
 }
 
 type APIServer struct {
@@ -44,7 +44,7 @@ func New(cfg Config, service service) *APIServer {
 }
 
 func (s *APIServer) Run(ctx context.Context) error {
-	zap.L().Info("starting api server")
+	zap.L().Debug("starting api server")
 	defer zap.L().Info("server stopped")
 
 	s.configRouter()
@@ -66,7 +66,6 @@ func (s *APIServer) Run(ctx context.Context) error {
 
 			return
 		}
-
 	}()
 
 	zap.L().Info("sever starting", zap.String("port", s.cfg.BindAddress))
@@ -81,7 +80,17 @@ func (s *APIServer) Run(ctx context.Context) error {
 func (s *APIServer) configRouter() {
 	zap.L().Debug("configuring router")
 
-	s.router.Post("/wallet", s.handleCreateWallet)
-	s.router.Get("/wallet", s.handleGetWallet)
-	s.router.Post("/transaction", s.handleTransaction)
+	s.router.Route("/api", func(r chi.Router) {
+		r.Route("/v1", func(r chi.Router) {
+			r.Post("/wallets", s.handleCreateWallet)
+			r.Get("/wallets", s.handleGetWallet)
+			r.Delete("/wallets", nil)
+
+			r.Put("/wallets/transfer", s.handleTransfer)
+			r.Put("/wallets/deposit", nil)
+			r.Put("/wallets/withdraw", nil)
+
+			r.Get("/wallets/transactions", nil)
+		})
+	})
 }

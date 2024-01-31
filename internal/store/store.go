@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"net/url"
 
 	"github.com/Saaghh/wallet/internal/config"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	migrate "github.com/rubenv/sql-migrate"
 	"go.uber.org/zap"
@@ -32,8 +32,6 @@ func New(ctx context.Context, cfg *config.Config) (*Postgres, error) {
 	}
 
 	dsn := urlScheme.String()
-
-	zap.L().Debug(fmt.Sprintf("dsn: %s", dsn))
 
 	db, err := pgxpool.New(ctx, dsn)
 	if err != nil {

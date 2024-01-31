@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"fmt"
+
 	"github.com/Saaghh/wallet/internal/model"
 	migrate "github.com/rubenv/sql-migrate"
 )
@@ -11,7 +11,7 @@ type store interface {
 	Migrate(direction migrate.MigrationDirection) error
 	GetWalletByID(ctx context.Context, walletID int64) (*model.Wallet, error)
 	CreateWallet(ctx context.Context, owner model.User, currency string) (*model.Wallet, error)
-	ExecuteTransaction(ctx context.Context, wtx model.Transaction) (*model.Transaction, error)
+	Transfer(ctx context.Context, wtx model.Transaction) (int64, error)
 }
 
 type Service struct {
@@ -27,7 +27,7 @@ func New(db store) *Service {
 func (s *Service) CreateWallet(ctx context.Context, owner model.User, currency string) (*model.Wallet, error) {
 	wallet, err := s.db.CreateWallet(ctx, owner, currency)
 	if err != nil {
-		return nil, fmt.Errorf("s.db.CreateWallet(owner, currency): %w", err)
+		return nil, err
 	}
 
 	return wallet, nil
@@ -36,17 +36,17 @@ func (s *Service) CreateWallet(ctx context.Context, owner model.User, currency s
 func (s *Service) GetWallet(ctx context.Context, walletID int64) (*model.Wallet, error) {
 	wallet, err := s.db.GetWalletByID(ctx, walletID)
 	if err != nil {
-		return nil, fmt.Errorf("s.db.GetWalletByID: %w", err)
+		return nil, err
 	}
 
 	return wallet, nil
 }
 
-func (s *Service) ExecuteTransaction(ctx context.Context, wtx model.Transaction) (*model.Transaction, error) {
-	tx, err := s.db.ExecuteTransaction(ctx, wtx)
+func (s *Service) Transfer(ctx context.Context, wtx model.Transaction) (int64, error) {
+	transferID, err := s.db.Transfer(ctx, wtx)
 	if err != nil {
-		return nil, fmt.Errorf("s.db.ExecuteTransaction(ctx, wtx): %w", err)
+		return 0, err
 	}
 
-	return tx, nil
+	return transferID, nil
 }

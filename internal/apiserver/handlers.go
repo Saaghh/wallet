@@ -2,115 +2,148 @@ package apiserver
 
 import (
 	"encoding/json"
+	"errors"
+	"net/http"
+
 	"github.com/Saaghh/wallet/internal/model"
 	"go.uber.org/zap"
-	"net/http"
 )
+
+type HTTPResponse struct {
+	Data  any    `json:"data,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+type TransferResponse struct {
+	TransactionID int64 `json:"transactionID"`
+}
 
 func (s *APIServer) handleCreateWallet(w http.ResponseWriter, r *http.Request) {
 	var rWallet model.Wallet
+	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewDecoder(r.Body).Decode(&rWallet); err != nil {
-		http.Error(w, "failed read body", http.StatusBadRequest)
-		zap.L().With(zap.Error(err)).Info("handleCreateWallet/json.NewDecoder(r.Body).Decode(&rWallet)")
+		w.WriteHeader(http.StatusBadRequest)
+		err = json.NewEncoder(w).Encode(HTTPResponse{Error: "failed to read body"})
+		if err != nil {
+			zap.L().With(zap.Error(err)).Warn("handleCreateWallet/json.NewEncoder(w).Encode(HTTPResponse{Error: \"failed to read body\"})")
+		}
 		return
 	}
 
-	user := model.User{
-		ID: rWallet.OwnerID,
-	}
-
-	wallet, err := s.service.CreateWallet(r.Context(), user, rWallet.Currency)
-	if err != nil {
-		http.Error(w, "Failed to create wallet", http.StatusInternalServerError)
-		zap.L().With(zap.Error(err)).Info("handleCreateWallet/s.service.CreateWallet(r.Context(), user, currency)")
+	wallet, err := s.service.CreateWallet(r.Context(), model.User{ID: rWallet.OwnerID}, rWallet.Currency)
+	switch {
+	case errors.Is(err, model.ErrUserNotFound):
+		w.WriteHeader(http.StatusNotFound)
+		err = json.NewEncoder(w).Encode(HTTPResponse{Error: err.Error()})
+		if err != nil {
+			zap.L().With(zap.Error(err)).Warn("handleCreateWallet/json.NewEncoder(w).Encode(HTTPResponse{Error: \"failed to read body\"})")
+		}
+		return
+	case err != nil:
+		w.WriteHeader(http.StatusInternalServerError)
+		err = json.NewEncoder(w).Encode(HTTPResponse{Error: "internal server error"})
+		if err != nil {
+			zap.L().With(zap.Error(err)).Warn("handleCreateWallet/json.NewEncoder(w).Encode(HTTPResponse{Error: \"failed to read body\"})")
+		}
 		return
 	}
 
-	result, err := json.Marshal(wallet)
-	if err != nil {
-		http.Error(w, "error marshaling data", http.StatusInternalServerError)
-		zap.L().With(zap.Error(err)).Warn("handleCreateWallet/json.Marshal(...)")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-
-	if _, err := w.Write(result); err != nil {
-		zap.L().With(zap.Error(err)).Warn("handleCreateWallet/w.Write(...)")
+	err = json.NewEncoder(w).Encode(HTTPResponse{Data: wallet})
+	if err != nil {
+		zap.L().With(zap.Error(err)).Warn("handleCreateWallet/json.NewEncoder(w).Encode(HTTPResponse{Data: wallet}}")
 		return
 	}
 
-	zap.L().Info("successful POST:/wallet", zap.String("client", r.RemoteAddr))
+	zap.L().Debug("successful POST:/wallet", zap.String("client", r.RemoteAddr))
 }
 
 func (s *APIServer) handleGetWallet(w http.ResponseWriter, r *http.Request) {
 	var rWallet model.Wallet
+	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewDecoder(r.Body).Decode(&rWallet); err != nil {
-		http.Error(w, "failed to read body", http.StatusBadRequest)
-		zap.L().With(zap.Error(err)).Info("handleGetWallet/json.NewDecoder(r.Body).Decode(&rWallet)")
+		w.WriteHeader(http.StatusBadRequest)
+		err = json.NewEncoder(w).Encode(HTTPResponse{Error: "failed to read body"})
+		if err != nil {
+			zap.L().With(zap.Error(err)).Warn("handleGetWallet/json.NewEncoder(w).Encode(HTTPResponse{Error: \"failed to read body\"})")
+		}
 		return
 	}
 
 	wallet, err := s.service.GetWallet(r.Context(), rWallet.ID)
-	if err != nil {
-		http.Error(w, "Failed to get wallet", http.StatusInternalServerError)
-		zap.L().With(zap.Error(err)).Info("handleGetWallet/s.service.GetWallet(r.Context(), walletID))")
+	switch {
+	case errors.Is(err, model.ErrWalletNotFound):
+		w.WriteHeader(http.StatusNotFound)
+		err = json.NewEncoder(w).Encode(HTTPResponse{Error: err.Error()})
+		if err != nil {
+			zap.L().With(zap.Error(err)).Warn("handleGetWallet/json.NewEncoder(w).Encode(HTTPResponse{Error: err.Error()})")
+		}
+		return
+	case err != nil:
+		zap.L().With(zap.Error(err)).Warn("handleGetWallet/s.service.GetWallet(r.Context(), walletID))")
+		w.WriteHeader(http.StatusInternalServerError)
+		err = json.NewEncoder(w).Encode(HTTPResponse{Error: "internal server error"})
+		if err != nil {
+			zap.L().With(zap.Error(err)).Warn("handleGetWallet/json.NewEncoder(w).Encode(HTTPResponse{Error: \"internal server error\"})")
+		}
 		return
 	}
 
-	result, err := json.Marshal(wallet)
-	if err != nil {
-		http.Error(w, "error marshaling data", http.StatusInternalServerError)
-		zap.L().With(zap.Error(err)).Warn("handleGetWallet/json.Marshal(...)")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-
-	if _, err := w.Write(result); err != nil {
-		zap.L().With(zap.Error(err)).Warn("handleGetWallet/w.Write(...)")
+	err = json.NewEncoder(w).Encode(HTTPResponse{Data: wallet})
+	if err != nil {
+		zap.L().With(zap.Error(err)).Warn("handleGetWallet/json.NewEncoder(w).Encode(HTTPResponse{Data: wallet}}")
 		return
 	}
 
-	zap.L().Info("successful GET:/wallet", zap.String("client", r.RemoteAddr))
-
+	zap.L().Debug("successful GET:/wallet", zap.String("client", r.RemoteAddr))
 }
 
-func (s *APIServer) handleTransaction(w http.ResponseWriter, r *http.Request) {
-	var rTx model.Transaction
-
-	if err := json.NewDecoder(r.Body).Decode(&rTx); err != nil {
-		http.Error(w, "failed to read body", http.StatusBadRequest)
-		zap.L().With(zap.Error(err)).Info("handleTransaction/json.NewDecoder(r.Body).Decode(&rWallet)")
-		return
-	}
-
-	tx, err := s.service.ExecuteTransaction(r.Context(), rTx)
-	if err != nil {
-		http.Error(w, "Failed to execute transaction", http.StatusInternalServerError)
-		zap.L().With(zap.Error(err)).Info("handleTransaction/s.service.ExecuteTransaction(r.Context(), rTx)")
-		return
-	}
-
-	result, err := json.Marshal(tx)
-	if err != nil {
-		http.Error(w, "error marshaling data", http.StatusInternalServerError)
-		zap.L().With(zap.Error(err)).Warn("handleTransaction/json.Marshal(...)")
-		return
-	}
-
+func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) {
+	var requestTransaction model.Transaction
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 
-	if _, err := w.Write(result); err != nil {
-		zap.L().With(zap.Error(err)).Warn("handleTransaction/w.Write(...)")
+	if err := json.NewDecoder(r.Body).Decode(&requestTransaction); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		err = json.NewEncoder(w).Encode(HTTPResponse{Error: "failed to read body"})
+		if err != nil {
+			zap.L().With(zap.Error(err)).Warn("handleTransfer/json.NewEncoder(w).Encode(HTTPResponse{Error: \"failed to read body\"})")
+		}
 		return
 	}
 
-	zap.L().Info("successful POST:/transaction", zap.String("client", r.RemoteAddr))
+	transferID, err := s.service.Transfer(r.Context(), requestTransaction)
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, model.ErrWalletNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, model.ErrNotEnoughBalance):
+			fallthrough
+		case errors.Is(err, model.ErrWrongCurrency):
+			fallthrough
+		case errors.Is(err, model.ErrWrongCurrency):
+			fallthrough
+		case errors.Is(err, model.ErrNegativeRequestBalance):
+			status = http.StatusUnprocessableEntity
 
+		default:
+			zap.L().With(zap.Error(err)).Warn("s.service.Transfer(r.Context(), requestTransaction)")
+			err = errors.New("internal server error")
+		}
+		w.WriteHeader(status)
+		err = json.NewEncoder(w).Encode(HTTPResponse{Error: err.Error()})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	err = json.NewEncoder(w).Encode(HTTPResponse{Data: TransferResponse{TransactionID: transferID}})
+	if err != nil {
+		zap.L().With(zap.Error(err)).Warn("handleTransfer/json.NewEncoder(w).Encode(HTTPResponse{Data: TransferResponse{TransactionID: transferID}}")
+		return
+	}
+
+	zap.L().Debug("successful POST:/transfer", zap.String("client", r.RemoteAddr))
 }
