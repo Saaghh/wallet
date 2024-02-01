@@ -90,11 +90,12 @@ func (p *Postgres) GetWalletByID(ctx context.Context, walletID int64) (*model.Wa
 	return wallet, nil
 }
 
-func (p *Postgres) Transfer(ctx context.Context, transfer model.Transaction) (int64, error) {
+func (p *Postgres) Transfer(ctx context.Context, transaction model.Transaction) (int64, error) {
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("p.db.Begin(ctx): %w", err)
 	}
+
 	defer func() {
 		err := tx.Rollback(ctx)
 		if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
@@ -106,32 +107,37 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transaction) (in
 
 	// Verifying data
 	// TODO change to switch structure
-	if transfer.Balance < 0 {
+	if transaction.Balance < 0 {
 		return 0, model.ErrNegativeRequestBalance
 	}
 
-	agentWallet, err := p.GetWalletByID(ctx, transfer.AgentWalletID)
+	agentWallet, err := p.GetWalletByID(ctx, transaction.AgentWalletID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, model.ErrWalletNotFound
 	}
+
 	if err != nil {
-		return 0, fmt.Errorf("p.GetWalletByID(ctx, transfer.AgentWalletID): %w", err)
+		return 0, fmt.Errorf("p.GetWalletByID(ctx, transaction.AgentWalletID): %w", err)
 	}
-	if agentWallet.Currency != transfer.Currency {
+
+	if agentWallet.Currency != transaction.Currency {
 		return 0, model.ErrWrongCurrency
 	}
-	if agentWallet.Balance < transfer.Balance {
+
+	if agentWallet.Balance < transaction.Balance {
 		return 0, model.ErrNotEnoughBalance
 	}
 
-	targetWallet, err := p.GetWalletByID(ctx, transfer.TargetWalletID)
+	targetWallet, err := p.GetWalletByID(ctx, transaction.TargetWalletID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, model.ErrWalletNotFound
 	}
+
 	if err != nil {
-		return 0, fmt.Errorf("p.GetWalletByID(ctx, transfer.TargetWalletID): %w", err)
+		return 0, fmt.Errorf("p.GetWalletByID(ctx, transaction.TargetWalletID): %w", err)
 	}
-	if targetWallet.Currency != transfer.Currency {
+
+	if targetWallet.Currency != transaction.Currency {
 		return 0, model.ErrWrongCurrency
 	}
 
@@ -144,13 +150,14 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transaction) (in
 	err = tx.QueryRow(
 		ctx,
 		query,
-		transfer.AgentWalletID, transfer.TargetWalletID, transfer.Currency, transfer.Balance,
+		transaction.AgentWalletID, transaction.TargetWalletID, transaction.Currency, transaction.Balance,
 	).Scan(
-		&transfer.ID,
-		&transfer.CreatedAt,
+		&transaction.ID,
+		&transaction.CreatedAt,
 	)
+
 	if err != nil {
-		return 0, fmt.Errorf("p.db.QueryRow(): %w", err)
+		return 0, fmt.Errorf("tx.QueryRow(): %w", err)
 	}
 
 	// Moving Cash
@@ -160,22 +167,24 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transaction) (in
 	WHERE id = $2
 `
 
-	agentWallet.Balance -= transfer.Balance
+	agentWallet.Balance -= transaction.Balance
 	agentWallet.ModifiedDate = time.Now()
 	_, err = tx.Exec(
 		ctx,
 		query,
 		agentWallet.Balance, agentWallet.ID, agentWallet.ModifiedDate)
+
 	if err != nil {
 		return 0, fmt.Errorf("tx.Exec(ctx, query, agentWallet.Balance, agentWallet.ID): %w", err)
 	}
 
-	targetWallet.Balance += transfer.Balance
+	targetWallet.Balance += transaction.Balance
 	targetWallet.ModifiedDate = time.Now()
 	_, err = tx.Exec(
 		ctx,
 		query,
 		targetWallet.Balance, targetWallet.ID, targetWallet.ModifiedDate)
+
 	if err != nil {
 		return 0, fmt.Errorf("tx.Exec(ctx, query, targetWallet.Balance, targetWallet.ID): %w", err)
 	}
@@ -185,5 +194,83 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transaction) (in
 		return 0, fmt.Errorf("tx.Commit(ctx): %w", err)
 	}
 
-	return transfer.ID, nil
+	return transaction.ID, nil
+}
+
+func (p *Postgres) Deposit(ctx context.Context, transaction model.Transaction) (int64, error) {
+	tx, err := p.db.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("p.db.Begin(ctx): %w", err)
+	}
+
+	defer func() {
+		err := tx.Rollback(ctx)
+		if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			zap.L().With(zap.Error(err)).Warn("Deposit/tx.Rollback(ctx)")
+		}
+	}()
+
+	// Validate data
+	// correct balance value
+	if transaction.Balance < 0 {
+		return 0, model.ErrNegativeRequestBalance
+	}
+	// correct currency
+	// wallet exists
+	targetWallet, err := p.GetWalletByID(ctx, transaction.TargetWalletID)
+
+	switch {
+	case err != nil:
+		return 0, fmt.Errorf("p.GetWalletByID(ctx, transaction.TargetWalletID): %w", err)
+	case errors.Is(err, model.ErrWalletNotFound):
+		return 0, err
+	}
+
+	if targetWallet.Currency != transaction.Currency {
+		return 0, model.ErrWrongCurrency
+	}
+
+	// Save transaction
+	query := `
+	INSERT INTO transactions (to_wallet_id, currency, balance)
+	VALUES ($1, $2, $3)
+	returning id, created_at
+`
+	err = tx.QueryRow(
+		ctx,
+		query,
+		transaction.TargetWalletID, transaction.Currency, transaction.Balance,
+	).Scan(
+		&transaction.ID,
+		&transaction.CreatedAt,
+	)
+
+	if err != nil {
+		return 0, fmt.Errorf("tx.QueryRow(): %w", err)
+	}
+	// Update balance
+
+	query = `
+	UPDATE wallets
+	SET balance = $1, modified_at = $3
+	WHERE id = $2
+`
+
+	targetWallet.Balance += transaction.Balance
+	targetWallet.ModifiedDate = time.Now()
+	_, err = tx.Exec(
+		ctx,
+		query,
+		targetWallet.Balance, targetWallet.ID, targetWallet.ModifiedDate)
+
+	if err != nil {
+		return 0, fmt.Errorf("tx.Exec(ctx, query, targetWallet.Balance, targetWallet.ID): %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("tx.Commit(ctx): %w", err)
+	}
+
+	return transaction.ID, nil
 }

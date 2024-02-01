@@ -37,6 +37,7 @@ func main() {
 
 	// no error handling for now
 	// check https://github.com/uber-go/zap/issues/991
+	//nolint: errcheck
 	defer zap.L().Sync()
 
 	s := apiserver.New(apiserver.Config{

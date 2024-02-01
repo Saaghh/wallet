@@ -6,7 +6,7 @@ import (
 
 type Wallet struct {
 	ID           int64     `json:"id"`
-	OwnerID      int64     `json:"ownerID"`
+	OwnerID      int64     `json:"ownerId"`
 	Currency     string    `json:"currency"`
 	Balance      float64   `json:"balance"`
 	CreatedDate  time.Time `json:"createdDate"`
@@ -22,8 +22,8 @@ type User struct {
 type Transaction struct {
 	ID             int64     `json:"id"`
 	CreatedAt      time.Time `json:"createdAt"`
-	AgentWalletID  int64     `json:"agentWalletID"`
-	TargetWalletID int64     `json:"targetWalletID"`
+	AgentWalletID  int64     `json:"agentWalletId"`
+	TargetWalletID int64     `json:"targetWalletId"`
 	Currency       string    `json:"currency"`
 	Balance        float64   `json:"balance"`
 }

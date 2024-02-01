@@ -7,16 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Saaghh/wallet/internal/model"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
-
-type service interface {
-	CreateWallet(ctx context.Context, owner model.User, currency string) (*model.Wallet, error)
-	GetWallet(ctx context.Context, walletID int64) (*model.Wallet, error)
-	Transfer(ctx context.Context, wtx model.Transaction) (int64, error)
-}
 
 type APIServer struct {
 	router  *chi.Mux
@@ -31,6 +24,7 @@ type Config struct {
 
 func New(cfg Config, service service) *APIServer {
 	router := chi.NewRouter()
+
 	return &APIServer{
 		cfg:     cfg,
 		service: service,
@@ -61,6 +55,7 @@ func (s *APIServer) Run(ctx context.Context) error {
 
 		zap.L().Debug("attempting graceful shutdown")
 
+		//nolint: contextcheck
 		if err := s.server.Shutdown(gfCtx); err != nil {
 			zap.L().With(zap.Error(err)).Warn("failed to gracefully shutdown http server")
 
@@ -87,7 +82,7 @@ func (s *APIServer) configRouter() {
 			r.Delete("/wallets", nil)
 
 			r.Put("/wallets/transfer", s.handleTransfer)
-			r.Put("/wallets/deposit", nil)
+			r.Put("/wallets/deposit", s.handleDeposit)
 			r.Put("/wallets/withdraw", nil)
 
 			r.Get("/wallets/transactions", nil)

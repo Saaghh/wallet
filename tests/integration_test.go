@@ -23,6 +23,7 @@ import (
 const (
 	walletEndpoint   = "/wallets"
 	transferEndpoint = "/wallets/transfer"
+	depositEndpoint  = "/wallets/deposit"
 	bindAddr         = "http://localhost:8080/api/v1"
 )
 
@@ -30,13 +31,22 @@ type IntegrationTestSuite struct {
 	suite.Suite
 	ctx *context.Context
 
-	correctUser      model.User
-	correctWallet    model.Wallet
-	impossibleUser   model.User
-	impossibleWallet model.Wallet
+	correctUser       model.User
+	correctWallet     model.Wallet
+	impossibleUser    model.User
+	impossibleWallet  model.Wallet
+	correctDeposit    model.Transaction
+	incorrectDeposit  model.Transaction
+	correctTransfer   model.Transaction
+	incorrectTransfer model.Transaction
+
+	wallets, transactions []int64
 }
 
 func (s *IntegrationTestSuite) SetupSuite() {
+	s.wallets = make([]int64, 0, 1)
+	s.transactions = make([]int64, 0, 1)
+
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 	s.ctx = &ctx
@@ -83,6 +93,16 @@ func (s *IntegrationTestSuite) SetupTest() {
 		ID:      -1,
 		OwnerID: -1,
 	}
+
+	s.correctDeposit = model.Transaction{
+		Currency: "USD",
+		Balance:  10000,
+	}
+
+	s.correctTransfer = model.Transaction{
+		Currency: "USD",
+		Balance:  50,
+	}
 }
 
 func TestIntegrationTestSuite(t *testing.T) {
@@ -116,31 +136,7 @@ func (s *IntegrationTestSuite) sendRequest(ctx context.Context, method, endpoint
 	return resp
 }
 
-func (s *IntegrationTestSuite) TestPositiveWallet() {
-	s.Run("wallet creation", func() {
-		ctx := context.Background()
-
-		var respData model.Wallet
-
-		resp := s.sendRequest(ctx, http.MethodPost, bindAddr+walletEndpoint, s.correctWallet, &apiserver.HTTPResponse{Data: &respData})
-		s.Require().Equal(http.StatusCreated, resp.StatusCode)
-		s.Require().Equal(s.correctWallet.Currency, respData.Currency)
-		s.Require().Equal(s.correctWallet.OwnerID, respData.OwnerID)
-		s.Require().NotZero(respData.ID)
-		s.correctWallet = respData
-	})
-
-	s.Run("wallet request", func() {
-		ctx := context.Background()
-
-		var respData model.Wallet
-
-		resp := s.sendRequest(ctx, http.MethodGet, bindAddr+walletEndpoint, s.correctWallet, &apiserver.HTTPResponse{Data: &respData})
-		s.Require().Equal(http.StatusOK, resp.StatusCode)
-		s.Require().Equal(s.correctWallet, respData)
-	})
-}
-
+// TODO check not full data for wallet create
 func (s *IntegrationTestSuite) TestNegativeWallet() {
 	s.Run("wallet creation / user not found", func() {
 		ctx := context.Background()
@@ -189,5 +185,99 @@ func (s *IntegrationTestSuite) TestBadRequests() {
 
 		resp := s.sendRequest(ctx, http.MethodPut, bindAddr+transferEndpoint, badRequestString, &respData)
 		s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
+	})
+
+	s.Run("wallet deposit / bad request", func() {
+		ctx := context.Background()
+
+		var respData model.Wallet
+
+		resp := s.sendRequest(ctx, http.MethodPut, bindAddr+depositEndpoint, badRequestString, &respData)
+		s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
+	})
+}
+
+func (s *IntegrationTestSuite) TestPositiveScript() {
+	var respWalletData model.Wallet
+
+	wallet1 := model.Wallet{
+		OwnerID:  1,
+		Currency: "EUR",
+	}
+
+	wallet2 := model.Wallet{
+		OwnerID:  1,
+		Currency: "EUR",
+	}
+
+	ctx := context.Background()
+
+	s.Run("creating 2 wallets", func() {
+		resp := s.sendRequest(ctx, http.MethodPost, bindAddr+walletEndpoint, wallet1, &apiserver.HTTPResponse{Data: &respWalletData})
+		s.Require().Equal(http.StatusCreated, resp.StatusCode)
+		s.Require().Equal(wallet1.Currency, respWalletData.Currency)
+		s.Require().Equal(wallet1.OwnerID, respWalletData.OwnerID)
+		s.Require().NotZero(respWalletData.ID)
+		wallet1.ID = respWalletData.ID
+		s.wallets = append(s.wallets, wallet1.ID)
+
+		resp = s.sendRequest(ctx, http.MethodPost, bindAddr+walletEndpoint, wallet2, &apiserver.HTTPResponse{Data: &respWalletData})
+		s.Require().Equal(http.StatusCreated, resp.StatusCode)
+		s.Require().Equal(wallet2.Currency, respWalletData.Currency)
+		s.Require().Equal(wallet2.OwnerID, respWalletData.OwnerID)
+		s.Require().NotZero(respWalletData.ID)
+		wallet2.ID = respWalletData.ID
+		s.wallets = append(s.wallets, wallet2.ID)
+	})
+
+	var transferResponse apiserver.TransferResponse
+
+	deposit := model.Transaction{
+		TargetWalletID: wallet1.ID,
+		Currency:       "EUR",
+		Balance:        10000,
+	}
+
+	s.Run("depositing money to 1st wallet", func() {
+		resp := s.sendRequest(ctx, http.MethodPut, bindAddr+depositEndpoint, deposit, &apiserver.HTTPResponse{Data: &transferResponse})
+		s.Require().Equal(http.StatusOK, resp.StatusCode)
+		s.Require().NotZero(transferResponse.TransactionID)
+		s.transactions = append(s.transactions, transferResponse.TransactionID)
+	})
+
+	s.Run("checking 1st wallet", func() {
+		resp := s.sendRequest(ctx, http.MethodGet, bindAddr+walletEndpoint, wallet1, &apiserver.HTTPResponse{Data: &respWalletData})
+		s.Require().Equal(http.StatusOK, resp.StatusCode)
+		s.Require().Equal(respWalletData.ID, wallet1.ID)
+		s.Require().Equal(respWalletData.Balance, deposit.Balance)
+		s.Require().Equal(respWalletData.Currency, wallet1.Currency)
+	})
+
+	transfer := model.Transaction{
+		AgentWalletID:  wallet1.ID,
+		TargetWalletID: wallet2.ID,
+		Currency:       "EUR",
+		Balance:        1000,
+	}
+
+	s.Run("transferring money 1 -> 2", func() {
+		resp := s.sendRequest(ctx, http.MethodPut, bindAddr+transferEndpoint, transfer, &apiserver.HTTPResponse{Data: &transferResponse})
+		s.Require().Equal(http.StatusOK, resp.StatusCode)
+		s.Require().NotZero(transferResponse.TransactionID)
+		s.transactions = append(s.transactions, transferResponse.TransactionID)
+	})
+
+	s.Run("checking both wallets", func() {
+		resp := s.sendRequest(ctx, http.MethodGet, bindAddr+walletEndpoint, wallet1, &apiserver.HTTPResponse{Data: &respWalletData})
+		s.Require().Equal(http.StatusOK, resp.StatusCode)
+		s.Require().Equal(wallet1.ID, respWalletData.ID)
+		s.Require().Equal(deposit.Balance-transfer.Balance, respWalletData.Balance)
+		s.Require().Equal(wallet1.Currency, respWalletData.Currency)
+
+		resp = s.sendRequest(ctx, http.MethodGet, bindAddr+walletEndpoint, wallet2, &apiserver.HTTPResponse{Data: &respWalletData})
+		s.Require().Equal(http.StatusOK, resp.StatusCode)
+		s.Require().Equal(wallet2.ID, respWalletData.ID)
+		s.Require().Equal(transfer.Balance, respWalletData.Balance)
+		s.Require().Equal(wallet2.Currency, respWalletData.Currency)
 	})
 }
