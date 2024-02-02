@@ -96,12 +96,12 @@ func (s *IntegrationTestSuite) SetupTest() {
 
 	s.correctDeposit = model.Transaction{
 		Currency: "USD",
-		Balance:  10000,
+		Sum:      10000,
 	}
 
 	s.correctTransfer = model.Transaction{
 		Currency: "USD",
-		Balance:  50,
+		Sum:      50,
 	}
 }
 
@@ -235,7 +235,7 @@ func (s *IntegrationTestSuite) TestPositiveScript() {
 	deposit := model.Transaction{
 		TargetWalletID: wallet1.ID,
 		Currency:       "EUR",
-		Balance:        10000,
+		Sum:            10000,
 	}
 
 	s.Run("depositing money to 1st wallet", func() {
@@ -249,7 +249,7 @@ func (s *IntegrationTestSuite) TestPositiveScript() {
 		resp := s.sendRequest(ctx, http.MethodGet, bindAddr+walletEndpoint, wallet1, &apiserver.HTTPResponse{Data: &respWalletData})
 		s.Require().Equal(http.StatusOK, resp.StatusCode)
 		s.Require().Equal(respWalletData.ID, wallet1.ID)
-		s.Require().Equal(respWalletData.Balance, deposit.Balance)
+		s.Require().Equal(respWalletData.Balance, deposit.Sum)
 		s.Require().Equal(respWalletData.Currency, wallet1.Currency)
 	})
 
@@ -257,7 +257,7 @@ func (s *IntegrationTestSuite) TestPositiveScript() {
 		AgentWalletID:  wallet1.ID,
 		TargetWalletID: wallet2.ID,
 		Currency:       "EUR",
-		Balance:        1000,
+		Sum:            1000,
 	}
 
 	s.Run("transferring money 1 -> 2", func() {
@@ -271,13 +271,13 @@ func (s *IntegrationTestSuite) TestPositiveScript() {
 		resp := s.sendRequest(ctx, http.MethodGet, bindAddr+walletEndpoint, wallet1, &apiserver.HTTPResponse{Data: &respWalletData})
 		s.Require().Equal(http.StatusOK, resp.StatusCode)
 		s.Require().Equal(wallet1.ID, respWalletData.ID)
-		s.Require().Equal(deposit.Balance-transfer.Balance, respWalletData.Balance)
+		s.Require().Equal(deposit.Sum-transfer.Sum, respWalletData.Balance)
 		s.Require().Equal(wallet1.Currency, respWalletData.Currency)
 
 		resp = s.sendRequest(ctx, http.MethodGet, bindAddr+walletEndpoint, wallet2, &apiserver.HTTPResponse{Data: &respWalletData})
 		s.Require().Equal(http.StatusOK, resp.StatusCode)
 		s.Require().Equal(wallet2.ID, respWalletData.ID)
-		s.Require().Equal(transfer.Balance, respWalletData.Balance)
+		s.Require().Equal(transfer.Sum, respWalletData.Balance)
 		s.Require().Equal(wallet2.Currency, respWalletData.Currency)
 	})
 }

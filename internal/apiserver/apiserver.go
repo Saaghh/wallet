@@ -77,15 +77,17 @@ func (s *APIServer) configRouter() {
 
 	s.router.Route("/api", func(r chi.Router) {
 		r.Route("/v1", func(r chi.Router) {
-			r.Post("/wallets", s.handleCreateWallet)
-			r.Get("/wallets", s.handleGetWallet)
-			r.Delete("/wallets", nil)
+			r.Post("/wallets", s.createWallet)
+			r.Get("/wallets", s.getWallets)
+			r.Get("/wallets/{id}", s.getWalletByID)
+			r.Delete("/wallets/{id}", s.deleteWallet)
+			r.Patch("/wallets/{id}", s.updateWallet)
 
-			r.Put("/wallets/transfer", s.handleTransfer)
-			r.Put("/wallets/deposit", s.handleDeposit)
-			r.Put("/wallets/withdraw", nil)
+			r.Put("/wallets/transfer", s.transfer)
+			r.Put("/wallets/deposit", s.deposit)
+			r.Put("/wallets/withdraw", s.withdraw)
 
-			r.Get("/wallets/transactions", nil)
+			r.Get("/wallets/transactions", s.getTransactions)
 		})
 	})
 }
