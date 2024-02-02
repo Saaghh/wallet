@@ -233,7 +233,7 @@ func (s *IntegrationTestSuite) TestPositiveScript() {
 	var transferResponse apiserver.TransferResponse
 
 	deposit := model.Transaction{
-		TargetWalletID: wallet1.ID,
+		TargetWalletID: &wallet1.ID,
 		Currency:       "EUR",
 		Sum:            10000,
 	}
@@ -254,8 +254,8 @@ func (s *IntegrationTestSuite) TestPositiveScript() {
 	})
 
 	transfer := model.Transaction{
-		AgentWalletID:  wallet1.ID,
-		TargetWalletID: wallet2.ID,
+		AgentWalletID:  &wallet1.ID,
+		TargetWalletID: &wallet2.ID,
 		Currency:       "EUR",
 		Sum:            1000,
 	}
