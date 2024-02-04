@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	migrate "github.com/rubenv/sql-migrate"
 	"os/signal"
 	"syscall"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/Saaghh/wallet/internal/logger"
 	"github.com/Saaghh/wallet/internal/service"
 	"github.com/Saaghh/wallet/internal/store"
+	migrate "github.com/rubenv/sql-migrate"
 	"go.uber.org/zap"
 )
 
@@ -35,8 +35,9 @@ func main() {
 
 	srv := service.New(str)
 
-	//no error handling for now
-	//check https://github.com/uber-go/zap/issues/991
+	// no error handling for now
+	// check https://github.com/uber-go/zap/issues/991
+	//nolint: errcheck
 	defer zap.L().Sync()
 
 	s := apiserver.New(apiserver.Config{

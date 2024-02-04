@@ -4,18 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Saaghh/wallet/internal/model"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
-
-type service interface {
-	CreateWallet(ctx context.Context, owner model.User, currency string) (*model.Wallet, error)
-	GetWallet(ctx context.Context, walletID int64) (*model.Wallet, error)
-}
 
 type APIServer struct {
 	router  *chi.Mux
@@ -30,6 +24,7 @@ type Config struct {
 
 func New(cfg Config, service service) *APIServer {
 	router := chi.NewRouter()
+
 	return &APIServer{
 		cfg:     cfg,
 		service: service,
@@ -43,7 +38,7 @@ func New(cfg Config, service service) *APIServer {
 }
 
 func (s *APIServer) Run(ctx context.Context) error {
-	zap.L().Info("starting api server")
+	zap.L().Debug("starting api server")
 	defer zap.L().Info("server stopped")
 
 	s.configRouter()
@@ -60,12 +55,12 @@ func (s *APIServer) Run(ctx context.Context) error {
 
 		zap.L().Debug("attempting graceful shutdown")
 
+		//nolint: contextcheck
 		if err := s.server.Shutdown(gfCtx); err != nil {
 			zap.L().With(zap.Error(err)).Warn("failed to gracefully shutdown http server")
 
 			return
 		}
-
 	}()
 
 	zap.L().Info("sever starting", zap.String("port", s.cfg.BindAddress))
@@ -80,6 +75,19 @@ func (s *APIServer) Run(ctx context.Context) error {
 func (s *APIServer) configRouter() {
 	zap.L().Debug("configuring router")
 
-	s.router.Post("/wallet", s.handleCreateWallet)
-	s.router.Get("/wallet", s.handleGetWallet)
+	s.router.Route("/api", func(r chi.Router) {
+		r.Route("/v1", func(r chi.Router) {
+			r.Post("/wallets", s.createWallet)
+			r.Get("/wallets", s.getWallets)
+			r.Get("/wallets/{id}", s.getWalletByID)
+			r.Delete("/wallets/{id}", s.deleteWallet)
+			r.Patch("/wallets/{id}", s.updateWallet)
+
+			r.Put("/wallets/transfer", s.transfer)
+			r.Put("/wallets/deposit", s.deposit)
+			r.Put("/wallets/withdraw", s.withdraw)
+
+			r.Get("/wallets/transactions", s.getTransactions)
+		})
+	})
 }
