@@ -11,9 +11,14 @@ fmt:
 lint: tidy fmt build
 	golangci-lint run
 
-serve:
-	go run ./cmd/apiserver/main.go
+serve: up
+	go run ./cmd/apiserver
+up: 
+	docker-compose up -d
 
-.PHONY: build tidy fmt lint serve
+test: up
+	go test ./tests
 
-.DEFAULT_GOAL := build
+.PHONY: build tidy fmt lint serve up test
+
+.DEFAULT_GOAL := lint

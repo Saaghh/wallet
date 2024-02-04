@@ -9,6 +9,8 @@ import (
 	"github.com/Saaghh/wallet/internal/config"
 	"github.com/Saaghh/wallet/internal/logger"
 	"github.com/Saaghh/wallet/internal/service"
+	"github.com/Saaghh/wallet/internal/store"
+	migrate "github.com/rubenv/sql-migrate"
 	"go.uber.org/zap"
 )
 
@@ -17,16 +19,30 @@ func main() {
 	defer cancel()
 
 	cfg := config.New()
-	service := service.New()
 
 	logger.InitLogger(logger.Config{Level: cfg.LogLevel})
 
+	str, err := store.New(ctx, cfg)
+	if err != nil {
+		zap.L().With(zap.Error(err)).Panic("str.New")
+	}
+
+	if err := str.Migrate(migrate.Up); err != nil {
+		zap.L().With(zap.Error(err)).Panic("str.Migrate")
+	}
+
+	zap.L().Info("successful migration")
+
+	srv := service.New(str)
+
+	// no error handling for now
+	// check https://github.com/uber-go/zap/issues/991
+	//nolint: errcheck
 	defer zap.L().Sync()
-	// TODO add error checking. Currently always errors with no obvious reason
 
 	s := apiserver.New(apiserver.Config{
-		Port: cfg.Port,
-	}, service)
+		BindAddress: cfg.BindAddress,
+	}, srv)
 
 	if err := s.Run(ctx); err != nil {
 		zap.L().Panic(err.Error())
