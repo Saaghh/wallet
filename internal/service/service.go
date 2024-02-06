@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+
 	"github.com/Saaghh/wallet/internal/model"
 	"github.com/google/uuid"
 )
@@ -49,7 +50,7 @@ func (s *Service) GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model
 }
 
 func (s *Service) Transfer(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error) {
-	//execution
+	// execution
 	transactionID, err := s.db.Transfer(ctx, transaction)
 	if err != nil {
 		return nil, fmt.Errorf("s.db.Transfer(ctx, transaction): %w", err)
@@ -59,7 +60,7 @@ func (s *Service) Transfer(ctx context.Context, transaction model.Transaction) (
 }
 
 func (s *Service) ExternalTransaction(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error) {
-	//execution
+	// execution
 	transactionID, err := s.db.ExternalTransaction(ctx, transaction)
 	if err != nil {
 		return nil, fmt.Errorf("s.db.ExternalTransaction(ctx, transaction): %w", err)
@@ -74,7 +75,7 @@ func (s *Service) GetWallets(ctx context.Context) ([]*model.Wallet, error) {
 		return nil, fmt.Errorf("s.db.GetWallets(ctx, owner): %w", err)
 	}
 
-	return wallets, err
+	return wallets, nil
 }
 
 func (s *Service) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {

@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"os/signal"
+	"syscall"
+	"testing"
+
 	"github.com/Saaghh/wallet/internal/apiserver"
 	"github.com/Saaghh/wallet/internal/config"
 	"github.com/Saaghh/wallet/internal/logger"
@@ -14,10 +19,6 @@ import (
 	migrate "github.com/rubenv/sql-migrate"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
-	"net/http"
-	"os/signal"
-	"syscall"
-	"testing"
 )
 
 const (
@@ -98,7 +99,6 @@ func (s *IntegrationTestSuite) TearDownSuite() {
 }
 
 func (s *IntegrationTestSuite) TestWallets() {
-
 	wallet1 := model.Wallet{
 		OwnerID:  s.testOwnerID,
 		Currency: currencyEUR,
@@ -163,11 +163,10 @@ func (s *IntegrationTestSuite) TestWallets() {
 				s.Require().Equal(http.StatusOK, resp.StatusCode)
 				s.Require().NotZero(len(wallets))
 				s.Require().Equal(3, walletsFound)
-
 			})
 
 			s.Run("404", func() {
-				//TODO get 404
+				// TODO get 404
 
 				s.Require().True(true)
 			})
@@ -358,14 +357,13 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 					s.Require().False(isWalletFound)
 				})
-
 			})
 		})
 	})
 
 	s.Run("wallets/deposit", func() {
 		s.Run("400", func() {
-			//TODO BUG: panic with empty body?
+			// TODO BUG: panic with empty body?
 			resp := s.sendRequest(context.Background(), http.MethodPut, depositEndpoint, badRequestString, nil)
 			s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
 		})
@@ -378,7 +376,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				Sum:           1000,
 			}
 
-			var iWalletID = uuid.Nil
+			iWalletID := uuid.Nil
 			var respData apiserver.HTTPResponse
 			trans.TargetWalletID = &iWalletID
 
@@ -390,7 +388,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 				&respData)
 
 			s.Require().Equal(http.StatusNotFound, resp.StatusCode)
-
 		})
 
 		s.Run("422", func() {
@@ -457,7 +454,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 		}
 
 		s.Run("200", func() {
-
 			var transferResponse apiserver.TransferResponse
 
 			resp := s.sendRequest(
@@ -474,7 +470,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 		})
 
 		s.Run("429", func() {
-
 			var transferResponse apiserver.TransferResponse
 
 			resp := s.sendRequest(
@@ -496,8 +491,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 		s.Run("404", func() {
 			s.Run("agent wallet not found", func() {
-
-				var impWID = uuid.Nil
+				impWID := uuid.Nil
 
 				trans := model.Transaction{
 					ID:             uuid.New(),
@@ -518,7 +512,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 			})
 
 			s.Run("target wallet not found", func() {
-				var impWID = uuid.Nil
+				impWID := uuid.Nil
 
 				trans := model.Transaction{
 					ID:             uuid.New(),
@@ -607,7 +601,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 		}
 
 		s.Run("200", func() {
-
 			var respData apiserver.TransferResponse
 
 			id := trans.ID.String()
@@ -626,7 +619,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 		})
 
 		s.Run("429", func() {
-
 			var respData apiserver.HTTPResponse
 
 			id := trans.ID.String()
@@ -655,8 +647,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 		})
 
 		s.Run("404", func() {
-
-			var walletID = uuid.Nil
+			walletID := uuid.Nil
 			trans := model.Transaction{
 				ID:             uuid.New(),
 				TargetWalletID: &walletID,
@@ -672,12 +663,10 @@ func (s *IntegrationTestSuite) TestWallets() {
 				nil)
 
 			s.Require().Equal(http.StatusNotFound, resp.StatusCode)
-
 		})
 
 		s.Run("422", func() {
 			s.Run("negative sum", func() {
-
 				trans := model.Transaction{
 					TargetWalletID: &wallet2.ID,
 					Currency:       currencyUSD,
@@ -756,7 +745,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 		}
 
 		s.Run("200", func() {
-
 			var transferResponse apiserver.TransferResponse
 
 			resp := s.sendRequest(
@@ -781,7 +769,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 			&respDataDebug)
 
 		s.Run("429", func() {
-
 			var respData apiserver.HTTPResponse
 
 			resp := s.sendRequest(
@@ -810,7 +797,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 			s.Require().NotZero(len(transactions))
 		})
 	})
-
 }
 
 func (s *IntegrationTestSuite) checkWalletPost(wallet *model.Wallet) {

@@ -7,13 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx/v5/pgconn"
 	"time"
 
 	"github.com/Saaghh/wallet/internal/model"
+	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/zap"
 )
 
@@ -32,7 +32,6 @@ func (p *Postgres) CreateUser(ctx context.Context, user model.User) (*model.User
 		&user.ID,
 		&user.RegDate,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("p.db.QueryRow(...): %w", err)
 	}
@@ -41,11 +40,9 @@ func (p *Postgres) CreateUser(ctx context.Context, user model.User) (*model.User
 }
 
 func (p *Postgres) TruncateTables(ctx context.Context) error {
-
 	_, err := p.db.Exec(
 		ctx,
 		"TRUNCATE TABLE transactions CASCADE")
-
 	if err != nil {
 		return fmt.Errorf("p.db.Exec(...): %w", err)
 	}
@@ -176,6 +173,7 @@ func (p *Postgres) GetTransactions(ctx context.Context) ([]*model.Transaction, e
 	SELECT id, from_wallet_id, to_wallet_id, currency, balance, created_at
 	FROM transactions
 `
+
 	rows, err := p.db.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("p.db.Query(ctx, query): %w", err)
@@ -208,7 +206,6 @@ func (p *Postgres) GetTransactions(ctx context.Context) ([]*model.Transaction, e
 	}
 
 	return transactions, nil
-
 }
 
 func (p *Postgres) GetWallets(ctx context.Context) ([]*model.Wallet, error) {
@@ -219,6 +216,7 @@ func (p *Postgres) GetWallets(ctx context.Context) ([]*model.Wallet, error) {
 	FROM wallets
 	WHERE is_disabled = false
 `
+
 	rows, err := p.db.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("p.db.Query(ctx, query, owner.ID): %w", err)
@@ -255,8 +253,8 @@ func (p *Postgres) GetWallets(ctx context.Context) ([]*model.Wallet, error) {
 }
 
 func (p *Postgres) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {
-
 	_, err := p.GetWalletByID(ctx, walletID)
+
 	switch {
 	case errors.Is(err, model.ErrWalletNotFound):
 		return model.ErrWalletNotFound
@@ -283,7 +281,6 @@ func (p *Postgres) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {
 }
 
 func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error) {
-
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("p.db.Begin(ctx): %w", err)
@@ -316,6 +313,7 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 			return nil, fmt.Errorf("p.db.QueryRow(...): %w", err)
 		}
 	}
+
 	if request.Currency != nil {
 		query := `
 		UPDATE wallets
@@ -342,6 +340,7 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 	}
 
 	wallet, err := p.GetWalletByID(ctx, walletID)
+
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, model.ErrWalletNotFound
@@ -365,10 +364,7 @@ func (p *Postgres) Transfer(ctx context.Context, transaction model.Transaction) 
 		}
 	}()
 
-	// TODO Validating all data
-
 	// Verifying data
-	// TODO change to switch structure
 	if transaction.Sum < 0 {
 		return nil, model.ErrNegativeRequestBalance
 	}
@@ -420,6 +416,7 @@ func (p *Postgres) Transfer(ctx context.Context, transaction model.Transaction) 
 
 	// Check for unique constraint violation error
 	var pgErr *pgconn.PgError
+
 	switch {
 	case errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation:
 		return nil, model.ErrDuplicateTransaction
@@ -505,6 +502,7 @@ func (p *Postgres) ExternalTransaction(ctx context.Context, transaction model.Tr
 	)
 
 	var pgErr *pgconn.PgError
+
 	switch {
 	case errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation:
 		return nil, model.ErrDuplicateTransaction
@@ -548,7 +546,6 @@ func (p *Postgres) ExternalTransaction(ctx context.Context, transaction model.Tr
 }
 
 func (p *Postgres) GetTransactionByID(ctx context.Context, id uuid.UUID) (*model.Transaction, error) {
-
 	if id == uuid.Nil {
 		return nil, model.ErrNilUUID
 	}
@@ -558,6 +555,7 @@ func (p *Postgres) GetTransactionByID(ctx context.Context, id uuid.UUID) (*model
 	FROM transactions
 	WHERE id = $1
 `
+
 	var transaction model.Transaction
 
 	err := p.db.QueryRow(
