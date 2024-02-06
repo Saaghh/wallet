@@ -13,11 +13,12 @@ lint: tidy fmt build
 
 serve: up
 	go run ./cmd/apiserver
-up: 
+
+up:
 	docker-compose up -d
 
-test: up
-	go test ./tests
+test: build up
+	go test -v ./tests
 
 .PHONY: build tidy fmt lint serve up test
 

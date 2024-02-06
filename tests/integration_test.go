@@ -6,10 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/Saaghh/wallet/internal/apiserver"
 	"github.com/Saaghh/wallet/internal/config"
@@ -17,8 +15,10 @@ import (
 	"github.com/Saaghh/wallet/internal/model"
 	"github.com/Saaghh/wallet/internal/service"
 	"github.com/Saaghh/wallet/internal/store"
+	"github.com/google/uuid"
 	migrate "github.com/rubenv/sql-migrate"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap"
 )
 
 const (
@@ -30,9 +30,6 @@ const (
 	bindAddr             = "http://localhost:8080/api/v1"
 	currencyEUR          = "EUR"
 	currencyUSD          = "USD"
-	prescriptedOwnerID   = 1
-	impossibleOwnerID    = -1
-	impossibleWalletID   = -1
 	standartName         = "good wallet"
 	secondayName         = "better wallet"
 	thirdName            = "best wallet"
@@ -43,16 +40,11 @@ type IntegrationTestSuite struct {
 	suite.Suite
 	ctx *context.Context
 
-	correctUser       model.User
-	correctWallet     model.Wallet
-	impossibleUser    model.User
-	impossibleWallet  model.Wallet
-	correctDeposit    model.Transaction
-	incorrectDeposit  model.Transaction
-	correctTransfer   model.Transaction
-	incorrectTransfer model.Transaction
+	wallets      []uuid.UUID
+	transactions []uuid.UUID
+	testOwnerID  uuid.UUID
 
-	wallets, transactions []int64
+	str *store.Postgres
 }
 
 func TestIntegrationTestSuite(t *testing.T) {
@@ -60,8 +52,9 @@ func TestIntegrationTestSuite(t *testing.T) {
 }
 
 func (s *IntegrationTestSuite) SetupSuite() {
-	s.wallets = make([]int64, 0, 1)
-	s.transactions = make([]int64, 0, 1)
+	s.wallets = make([]uuid.UUID, 0, 1)
+	s.transactions = make([]uuid.UUID, 0, 1)
+	s.testOwnerID = uuid.New()
 
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
@@ -77,6 +70,13 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	err = str.Migrate(migrate.Up)
 	s.Require().NoError(err)
 
+	user, err := str.CreateUser(ctx, model.User{Email: "test@test.com"})
+	s.Require().NoError(err)
+
+	s.testOwnerID = user.ID
+
+	s.str = str
+
 	srv := service.New(str)
 
 	server := apiserver.New(apiserver.Config{BindAddress: cfg.BindAddress}, srv)
@@ -87,61 +87,37 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	}()
 }
 
-func (s *IntegrationTestSuite) SetupTest() {
-	s.correctUser = model.User{
-		ID:      1,
-		Email:   "123@example.com",
-		RegDate: time.Now(),
-	}
+func (s *IntegrationTestSuite) TearDownSuite() {
+	err := s.str.TruncateTables(context.Background())
+	s.Require().NoError(err)
 
-	s.correctWallet = model.Wallet{
-		OwnerID:  1,
-		Currency: "USD",
-	}
+	err = s.str.TruncateTables(context.Background())
+	s.Require().NoError(err)
 
-	s.impossibleUser = model.User{
-		ID:      -1,
-		Email:   "impossible@example.com",
-		RegDate: time.Now(),
-	}
-
-	s.impossibleWallet = model.Wallet{
-		ID:      -1,
-		OwnerID: -1,
-	}
-
-	s.correctDeposit = model.Transaction{
-		Currency: "USD",
-		Sum:      10000,
-	}
-
-	s.correctTransfer = model.Transaction{
-		Currency: "USD",
-		Sum:      50,
-	}
+	err = s.str.TruncateTables(context.Background())
+	s.Require().NoError(err)
 }
 
 func (s *IntegrationTestSuite) TestWallets() {
-
 	wallet1 := model.Wallet{
-		OwnerID:  prescriptedOwnerID,
+		OwnerID:  s.testOwnerID,
 		Currency: currencyEUR,
 		Name:     standartName,
 	}
 
 	wallet2 := model.Wallet{
-		OwnerID:  prescriptedOwnerID,
+		OwnerID:  s.testOwnerID,
 		Currency: currencyEUR,
-		Name:     standartName,
+		Name:     secondayName,
 	}
 
 	wallet3 := model.Wallet{
-		OwnerID:  prescriptedOwnerID,
+		OwnerID:  s.testOwnerID,
 		Currency: currencyUSD,
-		Name:     standartName,
+		Name:     thirdName,
 	}
 
-	s.Run("/wallets", func() {
+	s.Run("wallets", func() {
 		s.Run("POST:/wallets", func() {
 			s.Run("201", func() {
 				s.checkWalletPost(&wallet1)
@@ -149,14 +125,21 @@ func (s *IntegrationTestSuite) TestWallets() {
 				s.checkWalletPost(&wallet3)
 			})
 
+			s.Run("422/duplicate name", func() {
+				var respWalletData model.Wallet
+
+				resp := s.sendRequest(context.Background(), http.MethodPost, walletEndpoint, wallet1, &apiserver.HTTPResponse{Data: &respWalletData})
+				s.Require().Equal(http.StatusUnprocessableEntity, resp.StatusCode)
+			})
+
 			s.Run("400", func() {
-				resp := s.sendRequest(context.Background(), http.MethodPost, bindAddr+walletEndpoint, badRequestString, nil)
+				resp := s.sendRequest(context.Background(), http.MethodPost, walletEndpoint, badRequestString, nil)
 				s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
 			})
 
 			s.Run("404", func() {
-				resp := s.sendRequest(context.Background(), http.MethodPost, bindAddr+walletEndpoint, model.Wallet{
-					OwnerID:  impossibleOwnerID,
+				resp := s.sendRequest(context.Background(), http.MethodPost, walletEndpoint, model.Wallet{
+					OwnerID:  uuid.New(),
 					Currency: currencyEUR,
 					Name:     standartName,
 				}, nil)
@@ -167,7 +150,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 		s.Run("GET:/wallets", func() {
 			s.Run("200", func() {
 				var wallets []model.Wallet
-				resp := s.sendRequest(context.Background(), http.MethodGet, bindAddr+walletEndpoint, nil, &apiserver.HTTPResponse{Data: &wallets})
+				resp := s.sendRequest(context.Background(), http.MethodGet, walletEndpoint, nil, &apiserver.HTTPResponse{Data: &wallets})
 
 				walletsFound := 0
 
@@ -180,23 +163,22 @@ func (s *IntegrationTestSuite) TestWallets() {
 				s.Require().Equal(http.StatusOK, resp.StatusCode)
 				s.Require().NotZero(len(wallets))
 				s.Require().Equal(3, walletsFound)
-
 			})
 
 			s.Run("404", func() {
-				//TODO get 404
+				// TODO get 404
 
 				s.Require().True(true)
 			})
 		})
 	})
 
-	s.Run("/wallets/{id}", func() {
+	s.Run("wallets/{id}", func() {
 		s.Run("GET:/wallets", func() {
 			s.Run("200", func() {
 				var respData model.Wallet
 
-				resp := s.sendRequest(context.Background(), http.MethodGet, bindAddr+walletEndpoint+"/"+strconv.FormatInt(wallet1.ID, 10), nil, &apiserver.HTTPResponse{Data: &respData})
+				resp := s.sendRequest(context.Background(), http.MethodGet, walletEndpoint+"/"+wallet1.ID.String(), nil, &apiserver.HTTPResponse{Data: &respData})
 				s.Require().Equal(http.StatusOK, resp.StatusCode)
 				s.Require().Equal(wallet1.OwnerID, respData.OwnerID)
 				s.Require().Equal(wallet1.Currency, respData.Currency)
@@ -205,12 +187,12 @@ func (s *IntegrationTestSuite) TestWallets() {
 			})
 
 			s.Run("400", func() {
-				resp := s.sendRequest(context.Background(), http.MethodGet, bindAddr+walletEndpoint+"/"+badRequestString, nil, nil)
+				resp := s.sendRequest(context.Background(), http.MethodGet, walletEndpoint+"/"+badRequestString, nil, nil)
 				s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
 			})
 
 			s.Run("404", func() {
-				resp := s.sendRequest(context.Background(), http.MethodGet, bindAddr+walletEndpoint+"/-1", nil, nil)
+				resp := s.sendRequest(context.Background(), http.MethodGet, walletEndpoint+"/"+uuid.New().String(), nil, nil)
 				s.Require().Equal(http.StatusNotFound, resp.StatusCode)
 			})
 		})
@@ -225,7 +207,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPatch,
-					bindAddr+walletEndpoint+"/"+strconv.FormatInt(wallet.ID, 10),
+					walletEndpoint+"/"+wallet.ID.String(),
 					model.UpdateWalletRequest{Name: &newName},
 					&apiserver.HTTPResponse{Data: &respData})
 
@@ -245,7 +227,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPatch,
-					bindAddr+walletEndpoint+"/"+strconv.FormatInt(wallet.ID, 10),
+					walletEndpoint+"/"+wallet.ID.String(),
 					model.UpdateWalletRequest{Currency: &newCurrency},
 					&apiserver.HTTPResponse{Data: &respData})
 
@@ -266,7 +248,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPatch,
-					bindAddr+walletEndpoint+"/"+strconv.FormatInt(wallet.ID, 10),
+					walletEndpoint+"/"+wallet.ID.String(),
 					model.UpdateWalletRequest{Currency: &newCurrency, Name: &newName},
 					&apiserver.HTTPResponse{Data: &respData})
 
@@ -283,7 +265,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPatch,
-					bindAddr+walletEndpoint+"/"+badRequestString,
+					walletEndpoint+"/"+badRequestString,
 					nil,
 					nil)
 				s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
@@ -293,7 +275,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPatch,
-					bindAddr+walletEndpoint+"/"+strconv.FormatInt(wallet1.ID, 10),
+					walletEndpoint+"/"+wallet1.ID.String(),
 					badRequestString,
 					nil)
 				s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
@@ -303,7 +285,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPatch,
-					bindAddr+walletEndpoint+"/"+strconv.FormatInt(impossibleWalletID, 10),
+					walletEndpoint+"/"+uuid.Nil.String(),
 					nil,
 					nil)
 				s.Require().Equal(http.StatusNotFound, resp.StatusCode)
@@ -315,7 +297,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodDelete,
-					bindAddr+walletEndpoint+"/"+badRequestString,
+					walletEndpoint+"/"+badRequestString,
 					nil,
 					nil)
 				s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
@@ -325,7 +307,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodDelete,
-					bindAddr+walletEndpoint+"/"+strconv.FormatInt(impossibleWalletID, 10),
+					walletEndpoint+"/"+uuid.Nil.String(),
 					nil,
 					nil)
 				s.Require().Equal(http.StatusNotFound, resp.StatusCode)
@@ -337,7 +319,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodDelete,
-					bindAddr+walletEndpoint+"/"+strconv.FormatInt(wallet.ID, 10),
+					walletEndpoint+"/"+wallet.ID.String(),
 					nil,
 					nil)
 
@@ -347,7 +329,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 					resp := s.sendRequest(
 						context.Background(),
 						http.MethodGet,
-						bindAddr+walletEndpoint+"/"+strconv.FormatInt(wallet.ID, 10),
+						walletEndpoint+"/"+wallet.ID.String(),
 						nil,
 						nil)
 
@@ -359,7 +341,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 					resp := s.sendRequest(
 						context.Background(),
 						http.MethodGet,
-						bindAddr+walletEndpoint,
+						walletEndpoint,
 						nil,
 						&apiserver.HTTPResponse{Data: &wallets})
 
@@ -375,44 +357,43 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 					s.Require().False(isWalletFound)
 				})
-
 			})
 		})
 	})
 
-	s.Run("/wallets/deposit", func() {
+	s.Run("wallets/deposit", func() {
 		s.Run("400", func() {
-			//TODO BUG: panic with empty body?
-			resp := s.sendRequest(context.Background(), http.MethodPut, bindAddr+depositEndpoint, badRequestString, nil)
+			// TODO BUG: panic with empty body?
+			resp := s.sendRequest(context.Background(), http.MethodPut, depositEndpoint, badRequestString, nil)
 			s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
 		})
 
-		trans := model.Transaction{
-			AgentWalletID: &wallet1.ID,
-			Currency:      currencyUSD,
-			Sum:           1000,
-		}
-
 		s.Run("404", func() {
+			trans := model.Transaction{
+				ID:            uuid.Must(uuid.NewRandom()),
+				AgentWalletID: &wallet1.ID,
+				Currency:      currencyUSD,
+				Sum:           1000,
+			}
 
-			var iWalletID int64 = impossibleWalletID
-
+			iWalletID := uuid.Nil
+			var respData apiserver.HTTPResponse
 			trans.TargetWalletID = &iWalletID
 
 			resp := s.sendRequest(
 				context.Background(),
 				http.MethodPut,
-				bindAddr+depositEndpoint,
+				depositEndpoint,
 				trans,
-				nil)
+				&respData)
 
 			s.Require().Equal(http.StatusNotFound, resp.StatusCode)
-
 		})
 
 		s.Run("422", func() {
 			s.Run("negative sum", func() {
-				trans = model.Transaction{
+				trans := model.Transaction{
+					ID:             uuid.New(),
 					TargetWalletID: &wallet1.ID,
 					Currency:       currencyUSD,
 					Sum:            -1,
@@ -421,7 +402,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+depositEndpoint,
+					depositEndpoint,
 					trans,
 					nil)
 
@@ -429,7 +410,8 @@ func (s *IntegrationTestSuite) TestWallets() {
 			})
 
 			s.Run("wrong currency", func() {
-				trans = model.Transaction{
+				trans := model.Transaction{
+					ID:             uuid.New(),
 					TargetWalletID: &wallet1.ID,
 					Currency:       currencyEUR,
 					Sum:            1000,
@@ -438,7 +420,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+depositEndpoint,
+					depositEndpoint,
 					trans,
 					nil)
 
@@ -446,7 +428,8 @@ func (s *IntegrationTestSuite) TestWallets() {
 			})
 
 			s.Run("zero sum", func() {
-				trans = model.Transaction{
+				trans := model.Transaction{
+					ID:             uuid.New(),
 					TargetWalletID: &wallet1.ID,
 					Currency:       currencyUSD,
 					Sum:            0,
@@ -455,7 +438,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+depositEndpoint,
+					depositEndpoint,
 					trans,
 					nil)
 
@@ -463,19 +446,20 @@ func (s *IntegrationTestSuite) TestWallets() {
 			})
 		})
 
-		s.Run("200", func() {
-			trans = model.Transaction{
-				TargetWalletID: &wallet1.ID,
-				Currency:       currencyUSD,
-				Sum:            1000,
-			}
+		trans := model.Transaction{
+			ID:             uuid.New(),
+			TargetWalletID: &wallet1.ID,
+			Currency:       currencyUSD,
+			Sum:            1000,
+		}
 
+		s.Run("200", func() {
 			var transferResponse apiserver.TransferResponse
 
 			resp := s.sendRequest(
 				context.Background(),
 				http.MethodPut,
-				bindAddr+depositEndpoint,
+				depositEndpoint,
 				trans,
 				&apiserver.HTTPResponse{Data: &transferResponse})
 
@@ -484,20 +468,33 @@ func (s *IntegrationTestSuite) TestWallets() {
 			trans.ID = transferResponse.TransactionID
 			s.transactions = append(s.transactions, trans.ID)
 		})
+
+		s.Run("429", func() {
+			var transferResponse apiserver.TransferResponse
+
+			resp := s.sendRequest(
+				context.Background(),
+				http.MethodPut,
+				depositEndpoint,
+				trans,
+				&apiserver.HTTPResponse{Data: &transferResponse})
+
+			s.Require().Equal(http.StatusTooManyRequests, resp.StatusCode)
+		})
 	})
 
-	s.Run("/wallets/transfer", func() {
+	s.Run("wallets/transfer", func() {
 		s.Run("400", func() {
-			resp := s.sendRequest(context.Background(), http.MethodPut, bindAddr+transferEndpoint, badRequestString, nil)
+			resp := s.sendRequest(context.Background(), http.MethodPut, transferEndpoint, badRequestString, nil)
 			s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
 		})
 
 		s.Run("404", func() {
 			s.Run("agent wallet not found", func() {
-
-				var impWID int64 = impossibleWalletID
+				impWID := uuid.Nil
 
 				trans := model.Transaction{
+					ID:             uuid.New(),
 					AgentWalletID:  &impWID,
 					TargetWalletID: &wallet2.ID,
 					Currency:       currencyUSD,
@@ -507,7 +504,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+transferEndpoint,
+					transferEndpoint,
 					trans,
 					nil)
 
@@ -515,9 +512,10 @@ func (s *IntegrationTestSuite) TestWallets() {
 			})
 
 			s.Run("target wallet not found", func() {
-				var impWID int64 = impossibleWalletID
+				impWID := uuid.Nil
 
 				trans := model.Transaction{
+					ID:             uuid.New(),
 					AgentWalletID:  &wallet1.ID,
 					TargetWalletID: &impWID,
 					Currency:       currencyUSD,
@@ -527,7 +525,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+transferEndpoint,
+					transferEndpoint,
 					trans,
 					nil)
 
@@ -538,6 +536,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 		s.Run("422", func() {
 			s.Run("not enough balance", func() {
 				trans := model.Transaction{
+					ID:             uuid.New(),
 					AgentWalletID:  &wallet1.ID,
 					TargetWalletID: &wallet2.ID,
 					Currency:       currencyUSD,
@@ -547,7 +546,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+transferEndpoint,
+					transferEndpoint,
 					trans,
 					nil)
 
@@ -556,6 +555,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 			s.Run("wrong currency", func() {
 				trans := model.Transaction{
+					ID:             uuid.New(),
 					AgentWalletID:  &wallet1.ID,
 					TargetWalletID: &wallet2.ID,
 					Currency:       currencyEUR,
@@ -565,7 +565,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+transferEndpoint,
+					transferEndpoint,
 					trans,
 					nil)
 
@@ -574,6 +574,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 			s.Run("negative sum", func() {
 				trans := model.Transaction{
+					ID:             uuid.New(),
 					AgentWalletID:  &wallet1.ID,
 					TargetWalletID: &wallet2.ID,
 					Currency:       currencyEUR,
@@ -583,7 +584,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+transferEndpoint,
+					transferEndpoint,
 					trans,
 					nil)
 
@@ -591,21 +592,24 @@ func (s *IntegrationTestSuite) TestWallets() {
 			})
 		})
 
-		s.Run("200", func() {
+		trans := model.Transaction{
+			ID:             uuid.New(),
+			AgentWalletID:  &wallet1.ID,
+			TargetWalletID: &wallet2.ID,
+			Currency:       currencyUSD,
+			Sum:            300,
+		}
 
+		s.Run("200", func() {
 			var respData apiserver.TransferResponse
 
-			trans := model.Transaction{
-				AgentWalletID:  &wallet1.ID,
-				TargetWalletID: &wallet2.ID,
-				Currency:       currencyUSD,
-				Sum:            300,
-			}
+			id := trans.ID.String()
+			zap.L().Debug(id)
 
 			resp := s.sendRequest(
 				context.Background(),
 				http.MethodPut,
-				bindAddr+transferEndpoint,
+				transferEndpoint,
 				trans,
 				&apiserver.HTTPResponse{Data: &respData})
 
@@ -613,23 +617,39 @@ func (s *IntegrationTestSuite) TestWallets() {
 			s.Require().NotZero(respData.TransactionID)
 			s.transactions = append(s.transactions, respData.TransactionID)
 		})
+
+		s.Run("429", func() {
+			var respData apiserver.HTTPResponse
+
+			id := trans.ID.String()
+			zap.L().Debug(id)
+
+			resp := s.sendRequest(
+				context.Background(),
+				http.MethodPut,
+				transferEndpoint,
+				trans,
+				&respData)
+
+			s.Require().Equal(http.StatusTooManyRequests, resp.StatusCode)
+		})
 	})
 
-	s.Run("/wallets/withdraw", func() {
+	s.Run("wallets/withdraw", func() {
 		s.Run("400", func() {
 			resp := s.sendRequest(
 				context.Background(),
 				http.MethodPut,
-				bindAddr+withdrawEndpoint,
+				withdrawEndpoint,
 				badRequestString,
 				nil)
 			s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
 		})
 
 		s.Run("404", func() {
-
-			var walletID int64 = impossibleWalletID
+			walletID := uuid.Nil
 			trans := model.Transaction{
+				ID:             uuid.New(),
 				TargetWalletID: &walletID,
 				Currency:       currencyUSD,
 				Sum:            300,
@@ -638,17 +658,15 @@ func (s *IntegrationTestSuite) TestWallets() {
 			resp := s.sendRequest(
 				context.Background(),
 				http.MethodPut,
-				bindAddr+withdrawEndpoint,
+				withdrawEndpoint,
 				trans,
 				nil)
 
 			s.Require().Equal(http.StatusNotFound, resp.StatusCode)
-
 		})
 
 		s.Run("422", func() {
 			s.Run("negative sum", func() {
-
 				trans := model.Transaction{
 					TargetWalletID: &wallet2.ID,
 					Currency:       currencyUSD,
@@ -658,7 +676,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+withdrawEndpoint,
+					withdrawEndpoint,
 					trans,
 					nil)
 
@@ -667,6 +685,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 			s.Run("wrong currency", func() {
 				trans := model.Transaction{
+					ID:             uuid.New(),
 					TargetWalletID: &wallet2.ID,
 					Currency:       currencyEUR,
 					Sum:            300,
@@ -675,7 +694,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+depositEndpoint,
+					depositEndpoint,
 					trans,
 					nil)
 
@@ -692,7 +711,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+withdrawEndpoint,
+					withdrawEndpoint,
 					trans,
 					nil)
 
@@ -701,6 +720,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 			s.Run("not enough balance", func() {
 				trans := model.Transaction{
+					ID:             uuid.New(),
 					TargetWalletID: &wallet2.ID,
 					Currency:       currencyUSD,
 					Sum:            3000,
@@ -709,7 +729,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				resp := s.sendRequest(
 					context.Background(),
 					http.MethodPut,
-					bindAddr+withdrawEndpoint,
+					withdrawEndpoint,
 					trans,
 					nil)
 
@@ -717,19 +737,20 @@ func (s *IntegrationTestSuite) TestWallets() {
 			})
 		})
 
-		s.Run("200", func() {
-			trans := model.Transaction{
-				TargetWalletID: &wallet2.ID,
-				Currency:       currencyUSD,
-				Sum:            300,
-			}
+		trans := model.Transaction{
+			ID:             uuid.New(),
+			TargetWalletID: &wallet2.ID,
+			Currency:       currencyUSD,
+			Sum:            300,
+		}
 
+		s.Run("200", func() {
 			var transferResponse apiserver.TransferResponse
 
 			resp := s.sendRequest(
 				context.Background(),
 				http.MethodPut,
-				bindAddr+withdrawEndpoint,
+				withdrawEndpoint,
 				trans,
 				&apiserver.HTTPResponse{Data: &transferResponse})
 
@@ -737,16 +758,38 @@ func (s *IntegrationTestSuite) TestWallets() {
 			s.Require().NotZero(transferResponse.TransactionID)
 			s.transactions = append(s.transactions, transferResponse.TransactionID)
 		})
+
+		var respDataDebug apiserver.HTTPResponse
+
+		s.sendRequest(
+			context.Background(),
+			http.MethodGet,
+			walletEndpoint,
+			nil,
+			&respDataDebug)
+
+		s.Run("429", func() {
+			var respData apiserver.HTTPResponse
+
+			resp := s.sendRequest(
+				context.Background(),
+				http.MethodPut,
+				withdrawEndpoint,
+				trans,
+				&respData)
+
+			s.Require().Equal(http.StatusTooManyRequests, resp.StatusCode)
+		})
 	})
 
-	s.Run("/wallets/transactions", func() {
+	s.Run("wallets/transactions", func() {
 		s.Run("200", func() {
 			var transactions []model.Transaction
 
 			resp := s.sendRequest(
 				context.Background(),
 				http.MethodGet,
-				bindAddr+transactionsEndpoint,
+				transactionsEndpoint,
 				nil,
 				&apiserver.HTTPResponse{Data: &transactions})
 
@@ -754,13 +797,12 @@ func (s *IntegrationTestSuite) TestWallets() {
 			s.Require().NotZero(len(transactions))
 		})
 	})
-
 }
 
 func (s *IntegrationTestSuite) checkWalletPost(wallet *model.Wallet) {
 	var respWalletData model.Wallet
 
-	resp := s.sendRequest(context.Background(), http.MethodPost, bindAddr+walletEndpoint, wallet, &apiserver.HTTPResponse{Data: &respWalletData})
+	resp := s.sendRequest(context.Background(), http.MethodPost, walletEndpoint, wallet, &apiserver.HTTPResponse{Data: &respWalletData})
 	s.Require().Equal(http.StatusCreated, resp.StatusCode)
 	s.Require().Equal(wallet.Currency, respWalletData.Currency)
 	s.Require().Equal(wallet.OwnerID, respWalletData.OwnerID)
@@ -777,7 +819,7 @@ func (s *IntegrationTestSuite) sendRequest(ctx context.Context, method, endpoint
 	reqBody, err := json.Marshal(body)
 	s.Require().NoError(err)
 
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, method, bindAddr+endpoint, bytes.NewReader(reqBody))
 	s.Require().NoError(err)
 
 	req.Header.Set("Content-Type", "application/json")
