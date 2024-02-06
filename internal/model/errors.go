@@ -11,4 +11,7 @@ var (
 	ErrWrongCurrency          = errors.New("wrong currency")
 	ErrNotEnoughBalance       = errors.New("not enough balance")
 	ErrNegativeRequestBalance = errors.New("negative balance in request")
+	ErrDuplicateTransaction   = errors.New("transactions id already exists")
+	ErrNilUUID                = errors.New("uuid is nil")
+	ErrDuplicateWallet        = errors.New("duplicate wallet")
 )

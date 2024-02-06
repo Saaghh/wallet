@@ -2,20 +2,23 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/Saaghh/wallet/internal/model"
+	"github.com/google/uuid"
 )
 
 type store interface {
 	CreateWallet(ctx context.Context, wallet model.Wallet) (*model.Wallet, error)
-	GetWalletByID(ctx context.Context, walletID int64) (*model.Wallet, error)
+	GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model.Wallet, error)
 	GetWallets(ctx context.Context) ([]*model.Wallet, error)
-	DeleteWallet(ctx context.Context, walletID int64) error
-	UpdateWallet(ctx context.Context, walletID int64, request model.UpdateWalletRequest) (*model.Wallet, error)
+	DeleteWallet(ctx context.Context, walletID uuid.UUID) error
+	UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error)
 
 	GetTransactions(ctx context.Context) ([]*model.Transaction, error)
-	Transfer(ctx context.Context, wtx model.Transaction) (int64, error)
-	ExternalTransaction(ctx context.Context, transaction model.Transaction) (int64, error)
+	Transfer(ctx context.Context, wtx model.Transaction) (*uuid.UUID, error)
+	ExternalTransaction(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error)
+	GetTransactionByID(ctx context.Context, id uuid.UUID) (*model.Transaction, error)
 }
 
 type Service struct {
@@ -37,7 +40,7 @@ func (s *Service) CreateWallet(ctx context.Context, wallet model.Wallet) (*model
 	return rWallet, nil
 }
 
-func (s *Service) GetWalletByID(ctx context.Context, walletID int64) (*model.Wallet, error) {
+func (s *Service) GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model.Wallet, error) {
 	wallet, err := s.db.GetWalletByID(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("s.db.GetWalletByID(ctx, walletID): %w", err)
@@ -46,19 +49,43 @@ func (s *Service) GetWalletByID(ctx context.Context, walletID int64) (*model.Wal
 	return wallet, nil
 }
 
-func (s *Service) Transfer(ctx context.Context, transaction model.Transaction) (int64, error) {
+func (s *Service) Transfer(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error) {
+	//validation
+	_, err := s.db.GetTransactionByID(ctx, transaction.ID)
+	switch {
+	case errors.Is(err, model.ErrTransactionsNotFound):
+		break
+	case err != nil:
+		return nil, fmt.Errorf("s.db.GetTransactionByID(ctx, transaction.ID): %w", err)
+	default:
+		return nil, model.ErrDuplicateTransaction
+	}
+
+	//execution
 	transactionID, err := s.db.Transfer(ctx, transaction)
 	if err != nil {
-		return 0, fmt.Errorf("s.db.Transfer(ctx, transaction): %w", err)
+		return nil, fmt.Errorf("s.db.Transfer(ctx, transaction): %w", err)
 	}
 
 	return transactionID, nil
 }
 
-func (s *Service) ExternalTransaction(ctx context.Context, transaction model.Transaction) (int64, error) {
+func (s *Service) ExternalTransaction(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error) {
+	//validation
+	_, err := s.db.GetTransactionByID(ctx, transaction.ID)
+	switch {
+	case errors.Is(err, model.ErrTransactionsNotFound):
+		break
+	case err != nil:
+		return nil, fmt.Errorf("s.db.GetTransactionByID(ctx, transaction.ID): %w", err)
+	default:
+		return nil, model.ErrDuplicateTransaction
+	}
+
+	//execution
 	transactionID, err := s.db.ExternalTransaction(ctx, transaction)
 	if err != nil {
-		return 0, fmt.Errorf("s.db.ExternalTransaction(ctx, transaction): %w", err)
+		return nil, fmt.Errorf("s.db.ExternalTransaction(ctx, transaction): %w", err)
 	}
 
 	return transactionID, nil
@@ -73,7 +100,7 @@ func (s *Service) GetWallets(ctx context.Context) ([]*model.Wallet, error) {
 	return wallets, err
 }
 
-func (s *Service) DeleteWallet(ctx context.Context, walletID int64) error {
+func (s *Service) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {
 	err := s.db.DeleteWallet(ctx, walletID)
 	if err != nil {
 		return fmt.Errorf("s.db.DeleteWallet(ctx, walletID): %w", err)
@@ -82,7 +109,7 @@ func (s *Service) DeleteWallet(ctx context.Context, walletID int64) error {
 	return nil
 }
 
-func (s *Service) UpdateWallet(ctx context.Context, walletID int64, request model.UpdateWalletRequest) (*model.Wallet, error) {
+func (s *Service) UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error) {
 	wallet, err := s.db.UpdateWallet(ctx, walletID, request)
 	if err != nil {
 		return nil, fmt.Errorf("s.db.UpdateWallet(ctx, walletID, request): %w", err)

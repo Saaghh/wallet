@@ -1,12 +1,13 @@
 package model
 
 import (
+	"github.com/google/uuid"
 	"time"
 )
 
 type Wallet struct {
-	ID           int64     `json:"id"`
-	OwnerID      int64     `json:"ownerId"`
+	ID           uuid.UUID `json:"id"`
+	OwnerID      uuid.UUID `json:"ownerId"`
 	Currency     string    `json:"currency"`
 	Balance      float64   `json:"balance"`
 	CreatedDate  time.Time `json:"createdDate"`
@@ -15,18 +16,18 @@ type Wallet struct {
 }
 
 type User struct {
-	ID      int64     `json:"id"`
+	ID      uuid.UUID `json:"id"`
 	Email   string    `json:"email"`
 	RegDate time.Time `json:"regDate"`
 }
 
 type Transaction struct {
-	ID             int64     `json:"id"`
-	CreatedAt      time.Time `json:"createdAt"`
-	AgentWalletID  *int64    `json:"agentWalletId,omitempty"`
-	TargetWalletID *int64    `json:"targetWalletId,omitempty"`
-	Currency       string    `json:"currency"`
-	Sum            float64   `json:"sum"`
+	ID             uuid.UUID  `json:"id"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	AgentWalletID  *uuid.UUID `json:"agentWalletId,omitempty"`
+	TargetWalletID *uuid.UUID `json:"targetWalletId,omitempty"`
+	Currency       string     `json:"currency"`
+	Sum            float64    `json:"sum"`
 }
 
 type UpdateWalletRequest struct {

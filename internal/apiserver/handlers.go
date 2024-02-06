@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/go-chi/chi/v5"
-	"net/http"
-	"strconv"
-
 	"github.com/Saaghh/wallet/internal/model"
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"net/http"
 )
 
 type HTTPResponse struct {
@@ -18,19 +17,19 @@ type HTTPResponse struct {
 }
 
 type TransferResponse struct {
-	TransactionID int64 `json:"transactionId"`
+	TransactionID uuid.UUID `json:"transactionId"`
 }
 
 type service interface {
 	CreateWallet(ctx context.Context, wallet model.Wallet) (*model.Wallet, error)
-	GetWalletByID(ctx context.Context, walletID int64) (*model.Wallet, error)
+	GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model.Wallet, error)
 	GetWallets(ctx context.Context) ([]*model.Wallet, error)
-	DeleteWallet(ctx context.Context, walletID int64) error
-	UpdateWallet(ctx context.Context, walletID int64, request model.UpdateWalletRequest) (*model.Wallet, error)
+	DeleteWallet(ctx context.Context, walletID uuid.UUID) error
+	UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error)
 
 	GetTransactions(ctx context.Context) ([]*model.Transaction, error)
-	Transfer(ctx context.Context, wtx model.Transaction) (int64, error)
-	ExternalTransaction(ctx context.Context, transaction model.Transaction) (int64, error)
+	Transfer(ctx context.Context, wtx model.Transaction) (*uuid.UUID, error)
+	ExternalTransaction(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error)
 }
 
 func (s *APIServer) createWallet(w http.ResponseWriter, r *http.Request) {
@@ -42,10 +41,14 @@ func (s *APIServer) createWallet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wallet, err := s.service.CreateWallet(r.Context(), rWallet)
-
 	switch {
 	case errors.Is(err, model.ErrUserNotFound):
 		writeErrorResponse(w, http.StatusNotFound, "user not found")
+		return
+	case errors.Is(err, model.ErrNilUUID):
+		fallthrough
+	case errors.Is(err, model.ErrDuplicateWallet):
+		writeErrorResponse(w, http.StatusUnprocessableEntity, "wallet name is already taken")
 		return
 	case err != nil:
 		zap.L().With(zap.Error(err)).Warn(
@@ -78,7 +81,7 @@ func (s *APIServer) getWallets(w http.ResponseWriter, r *http.Request) {
 
 func (s *APIServer) getWalletByID(w http.ResponseWriter, r *http.Request) {
 
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "can't get id")
 		return
@@ -86,9 +89,12 @@ func (s *APIServer) getWalletByID(w http.ResponseWriter, r *http.Request) {
 
 	wallet, err := s.service.GetWalletByID(r.Context(), id)
 	switch {
+	case errors.Is(err, model.ErrNilUUID):
+		fallthrough
 	case errors.Is(err, model.ErrWalletNotFound):
 		writeErrorResponse(w, http.StatusNotFound, "wallet not found")
 		return
+
 	case err != nil:
 		zap.L().With(zap.Error(err)).Warn("getWalletByID/s.service.GetWalletByID(r.Context(), walletID))")
 		writeErrorResponse(w, http.StatusInternalServerError, "internal server error")
@@ -101,7 +107,7 @@ func (s *APIServer) getWalletByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) updateWallet(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "can't get id")
 		return
@@ -116,6 +122,8 @@ func (s *APIServer) updateWallet(w http.ResponseWriter, r *http.Request) {
 
 	wallet, err := s.service.UpdateWallet(r.Context(), id, updateRequest)
 	switch {
+	case errors.Is(err, model.ErrNilUUID):
+		fallthrough
 	case errors.Is(err, model.ErrWalletNotFound):
 		writeErrorResponse(w, http.StatusNotFound, "wallet not found")
 		return
@@ -132,7 +140,7 @@ func (s *APIServer) updateWallet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) deleteWallet(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "can't get id")
 		return
@@ -140,6 +148,8 @@ func (s *APIServer) deleteWallet(w http.ResponseWriter, r *http.Request) {
 
 	err = s.service.DeleteWallet(r.Context(), id)
 	switch {
+	case errors.Is(err, model.ErrNilUUID):
+		fallthrough
 	case errors.Is(err, model.ErrWalletNotFound):
 		writeErrorResponse(w, http.StatusNotFound, "wallet not found")
 		return
@@ -180,8 +190,13 @@ func (s *APIServer) deposit(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, model.ErrWrongCurrency):
 		fallthrough
+	case errors.Is(err, model.ErrNilUUID):
+		fallthrough
 	case errors.Is(err, model.ErrNegativeRequestBalance):
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "incorrect request data")
+		return
+	case errors.Is(err, model.ErrDuplicateTransaction):
+		writeErrorResponse(w, http.StatusUnprocessableEntity, "transaction already exists")
 		return
 	case err != nil:
 		zap.L().With(zap.Error(err)).Warn("deposit/s.service.ExternalTransaction(r.Context(), requestTransaction)")
@@ -189,7 +204,7 @@ func (s *APIServer) deposit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeOkResponse(w, http.StatusOK, TransferResponse{TransactionID: transferID})
+	writeOkResponse(w, http.StatusOK, TransferResponse{TransactionID: *transferID})
 
 	zap.L().Debug("successful PUT:/deposit", zap.String("client", r.RemoteAddr))
 }
@@ -211,6 +226,10 @@ func (s *APIServer) transfer(w http.ResponseWriter, r *http.Request) {
 		fallthrough
 	case errors.Is(err, model.ErrWrongCurrency):
 		fallthrough
+	case errors.Is(err, model.ErrDuplicateTransaction):
+		fallthrough
+	case errors.Is(err, model.ErrNilUUID):
+		fallthrough
 	case errors.Is(err, model.ErrNegativeRequestBalance):
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "incorrect request data")
 		return
@@ -220,7 +239,7 @@ func (s *APIServer) transfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeOkResponse(w, http.StatusOK, TransferResponse{TransactionID: transferID})
+	writeOkResponse(w, http.StatusOK, TransferResponse{TransactionID: *transferID})
 
 	zap.L().Debug("successful PUT:/transfer", zap.String("client", r.RemoteAddr))
 }
@@ -245,6 +264,10 @@ func (s *APIServer) withdraw(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, model.ErrWalletNotFound):
 		writeErrorResponse(w, http.StatusNotFound, "wallet not found")
 		return
+	case errors.Is(err, model.ErrDuplicateTransaction):
+		fallthrough
+	case errors.Is(err, model.ErrNilUUID):
+		fallthrough
 	case errors.Is(err, model.ErrWrongCurrency):
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "incorrect request data")
 		return
@@ -257,7 +280,7 @@ func (s *APIServer) withdraw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeOkResponse(w, http.StatusOK, TransferResponse{TransactionID: transferID})
+	writeOkResponse(w, http.StatusOK, TransferResponse{TransactionID: *transferID})
 
 	zap.L().Debug("successful PUT:/withdraw", zap.String("client", r.RemoteAddr))
 }
