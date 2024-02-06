@@ -1,3 +1,6 @@
+//go:build !MySql
+// +build !MySql
+
 package store
 
 import (
@@ -5,12 +8,66 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"time"
 
 	"github.com/Saaghh/wallet/internal/model"
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 )
+
+func (p *Postgres) CreateUser(ctx context.Context, user model.User) (*model.User, error) {
+	query := `
+	INSERT INTO users (email)
+	VALUES ($1)
+	RETURNING id, registered_at
+`
+
+	err := p.db.QueryRow(
+		ctx,
+		query,
+		user.Email,
+	).Scan(
+		&user.ID,
+		&user.RegDate,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("p.db.QueryRow(...): %w", err)
+	}
+
+	return &user, nil
+}
+
+func (p *Postgres) TruncateTables(ctx context.Context) error {
+
+	_, err := p.db.Exec(
+		ctx,
+		"TRUNCATE TABLE transactions CASCADE")
+
+	if err != nil {
+		return fmt.Errorf("p.db.Exec(...): %w", err)
+	}
+
+	_, err = p.db.Exec(
+		ctx,
+		"TRUNCATE TABLE wallets CASCADE")
+
+	if err != nil {
+		return fmt.Errorf("p.db.Exec(...): %w", err)
+	}
+
+	_, err = p.db.Exec(
+		ctx,
+		"TRUNCATE TABLE users CASCADE")
+
+	if err != nil {
+		return fmt.Errorf("p.db.Exec(...): %w", err)
+	}
+
+	return nil
+}
 
 func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*model.Wallet, error) {
 	if wallet.OwnerID == uuid.Nil {
@@ -361,7 +418,12 @@ func (p *Postgres) Transfer(ctx context.Context, transaction model.Transaction) 
 		&transaction.CreatedAt,
 	)
 
-	if err != nil {
+	// Check for unique constraint violation error
+	var pgErr *pgconn.PgError
+	switch {
+	case errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation:
+		return nil, model.ErrDuplicateTransaction
+	case err != nil:
 		return nil, fmt.Errorf("tx.QueryRow(): %w", err)
 	}
 
@@ -427,14 +489,6 @@ func (p *Postgres) ExternalTransaction(ctx context.Context, transaction model.Tr
 		return nil, err
 	}
 
-	if targetWallet.Currency != transaction.Currency {
-		return nil, model.ErrWrongCurrency
-	}
-
-	if targetWallet.Balance+transaction.Sum < 0 {
-		return nil, model.ErrNotEnoughBalance
-	}
-
 	// Save transaction
 	query := `
 	INSERT INTO transactions (id, to_wallet_id, currency, balance)
@@ -450,9 +504,22 @@ func (p *Postgres) ExternalTransaction(ctx context.Context, transaction model.Tr
 		&transaction.CreatedAt,
 	)
 
-	if err != nil {
+	var pgErr *pgconn.PgError
+	switch {
+	case errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation:
+		return nil, model.ErrDuplicateTransaction
+	case err != nil:
 		return nil, fmt.Errorf("tx.QueryRow(): %w", err)
 	}
+
+	if targetWallet.Currency != transaction.Currency {
+		return nil, model.ErrWrongCurrency
+	}
+
+	if targetWallet.Balance+transaction.Sum < 0 {
+		return nil, model.ErrNotEnoughBalance
+	}
+
 	// Update balance
 
 	query = `

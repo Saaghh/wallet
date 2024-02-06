@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/Saaghh/wallet/internal/model"
 	"github.com/google/uuid"
@@ -50,17 +49,6 @@ func (s *Service) GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model
 }
 
 func (s *Service) Transfer(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error) {
-	//validation
-	_, err := s.db.GetTransactionByID(ctx, transaction.ID)
-	switch {
-	case errors.Is(err, model.ErrTransactionsNotFound):
-		break
-	case err != nil:
-		return nil, fmt.Errorf("s.db.GetTransactionByID(ctx, transaction.ID): %w", err)
-	default:
-		return nil, model.ErrDuplicateTransaction
-	}
-
 	//execution
 	transactionID, err := s.db.Transfer(ctx, transaction)
 	if err != nil {
@@ -71,17 +59,6 @@ func (s *Service) Transfer(ctx context.Context, transaction model.Transaction) (
 }
 
 func (s *Service) ExternalTransaction(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error) {
-	//validation
-	_, err := s.db.GetTransactionByID(ctx, transaction.ID)
-	switch {
-	case errors.Is(err, model.ErrTransactionsNotFound):
-		break
-	case err != nil:
-		return nil, fmt.Errorf("s.db.GetTransactionByID(ctx, transaction.ID): %w", err)
-	default:
-		return nil, model.ErrDuplicateTransaction
-	}
-
 	//execution
 	transactionID, err := s.db.ExternalTransaction(ctx, transaction)
 	if err != nil {

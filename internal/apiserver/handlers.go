@@ -196,7 +196,7 @@ func (s *APIServer) deposit(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "incorrect request data")
 		return
 	case errors.Is(err, model.ErrDuplicateTransaction):
-		writeErrorResponse(w, http.StatusUnprocessableEntity, "transaction already exists")
+		writeErrorResponse(w, http.StatusTooManyRequests, "transaction already exists")
 		return
 	case err != nil:
 		zap.L().With(zap.Error(err)).Warn("deposit/s.service.ExternalTransaction(r.Context(), requestTransaction)")
@@ -226,12 +226,13 @@ func (s *APIServer) transfer(w http.ResponseWriter, r *http.Request) {
 		fallthrough
 	case errors.Is(err, model.ErrWrongCurrency):
 		fallthrough
-	case errors.Is(err, model.ErrDuplicateTransaction):
-		fallthrough
 	case errors.Is(err, model.ErrNilUUID):
 		fallthrough
 	case errors.Is(err, model.ErrNegativeRequestBalance):
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "incorrect request data")
+		return
+	case errors.Is(err, model.ErrDuplicateTransaction):
+		writeErrorResponse(w, http.StatusTooManyRequests, "transaction already exists")
 		return
 	case err != nil:
 		zap.L().With(zap.Error(err)).Warn("s.service.Transfer(r.Context(), requestTransaction)")
@@ -264,8 +265,6 @@ func (s *APIServer) withdraw(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, model.ErrWalletNotFound):
 		writeErrorResponse(w, http.StatusNotFound, "wallet not found")
 		return
-	case errors.Is(err, model.ErrDuplicateTransaction):
-		fallthrough
 	case errors.Is(err, model.ErrNilUUID):
 		fallthrough
 	case errors.Is(err, model.ErrWrongCurrency):
@@ -273,6 +272,9 @@ func (s *APIServer) withdraw(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, model.ErrNotEnoughBalance):
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "not enough balance")
+		return
+	case errors.Is(err, model.ErrDuplicateTransaction):
+		writeErrorResponse(w, http.StatusTooManyRequests, "transaction already exists")
 		return
 	case err != nil:
 		zap.L().With(zap.Error(err)).Warn("withdraw/s.service.ExternalTransaction(r.Context(), requestTransaction)")
