@@ -164,7 +164,7 @@ func (s *Service) UpdateWallet(ctx context.Context, walletID uuid.UUID, request 
 	}
 
 	if request.Currency != nil && *request.Currency != wallet.Currency {
-		xr, err := s.cc.GetExchangeRate(*request.Currency, wallet.Currency)
+		xr, err := s.cc.GetExchangeRate(wallet.Currency, *request.Currency)
 		if err != nil {
 			return nil, fmt.Errorf("s.cc.GetExchangeRate(*request.Currency, wallet.Currency): %w", err)
 		}
