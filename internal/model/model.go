@@ -41,6 +41,7 @@ type Transfer struct {
 }
 
 type UpdateWalletRequest struct {
-	Name     *string `json:"name,omitempty"`
-	Currency *string `json:"currency,omitempty"`
+	Name           *string `json:"name,omitempty"`
+	Currency       *string `json:"currency,omitempty"`
+	ConversionRate float64 `json:"conversionRate,omitempty"`
 }

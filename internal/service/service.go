@@ -158,7 +158,23 @@ func (s *Service) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {
 }
 
 func (s *Service) UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error) {
-	wallet, err := s.db.UpdateWallet(ctx, walletID, request)
+	wallet, err := s.db.GetWalletByID(ctx, walletID)
+	if err != nil {
+		return nil, fmt.Errorf("s.db.GetWalletByID(ctx, walletID): %w", err)
+	}
+
+	if request.Currency != nil && *request.Currency != wallet.Currency {
+		xr, err := s.cc.GetExchangeRate(*request.Currency, wallet.Currency)
+		if err != nil {
+			return nil, fmt.Errorf("s.cc.GetExchangeRate(*request.Currency, wallet.Currency): %w", err)
+		}
+
+		request.ConversionRate = xr
+	} else {
+		request.ConversionRate = 1
+	}
+
+	wallet, err = s.db.UpdateWallet(ctx, walletID, request)
 	if err != nil {
 		return nil, fmt.Errorf("s.db.UpdateWallet(ctx, walletID, request): %w", err)
 	}

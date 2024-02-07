@@ -50,7 +50,6 @@ func (p *Postgres) TruncateTables(ctx context.Context) error {
 	_, err = p.db.Exec(
 		ctx,
 		"TRUNCATE TABLE wallets CASCADE")
-
 	if err != nil {
 		return fmt.Errorf("p.db.Exec(...): %w", err)
 	}
@@ -58,7 +57,6 @@ func (p *Postgres) TruncateTables(ctx context.Context) error {
 	_, err = p.db.Exec(
 		ctx,
 		"TRUNCATE TABLE users CASCADE")
-
 	if err != nil {
 		return fmt.Errorf("p.db.Exec(...): %w", err)
 	}
@@ -127,7 +125,6 @@ func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*mode
 		&wallet.CreatedDate,
 		&wallet.ModifiedDate,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("p.db.QueryRow(): %w", err)
 	}
@@ -281,6 +278,11 @@ func (p *Postgres) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {
 }
 
 func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error) {
+	wallet, err := p.GetWalletByID(ctx, walletID)
+	if err != nil {
+		return nil, fmt.Errorf("p.GetWalletByID(ctx, walletID): %w", err)
+	}
+
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("p.db.Begin(ctx): %w", err)
@@ -309,18 +311,18 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 		UPDATE wallets
 		SET name = $2, modified_at = $3
 		WHERE id = $1 AND is_disabled = false
-		RETURNING id
+		RETURNING id, name, modified_at
 	`
+
 		err = tx.QueryRow(
 			ctx,
 			query,
 			walletID, request.Name, time.Now(),
-		).Scan(nil)
-
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			return nil, model.ErrWalletNotFound
-		case err != nil:
+		).Scan(
+			&wallet.ID,
+			&wallet.Name,
+			&wallet.ModifiedDate)
+		if err != nil {
 			return nil, fmt.Errorf("p.db.QueryRow(...): %w", err)
 		}
 	}
@@ -328,35 +330,28 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 	if request.Currency != nil {
 		query := `
 		UPDATE wallets
-		SET currency = $2, modified_at = $3
+		SET currency = $2, modified_at = $3, balance = $4
 		WHERE id = $1 AND is_disabled = false
-		RETURNING id
+		RETURNING id, currency, balance, modified_at
 	`
+
 		err = tx.QueryRow(
 			ctx,
 			query,
-			walletID, request.Currency, time.Now(),
-		).Scan(nil)
-
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			return nil, model.ErrWalletNotFound
-		case err != nil:
+			walletID, request.Currency, time.Now(), wallet.Balance*request.ConversionRate,
+		).Scan(
+			&wallet.ID,
+			&wallet.Currency,
+			&wallet.Balance,
+			&wallet.ModifiedDate,
+		)
+		if err != nil {
 			return nil, fmt.Errorf("p.db.QueryRow(...): %w", err)
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("tx.Commit(ctx): %w", err)
-	}
-
-	wallet, err := p.GetWalletByID(ctx, walletID)
-
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return nil, model.ErrWalletNotFound
-	case err != nil:
-		return nil, fmt.Errorf("p.db.QueryRow(...): %w", err)
 	}
 
 	return wallet, nil
@@ -523,11 +518,11 @@ func (p *Postgres) ExternalTransaction(ctx context.Context, transaction model.Tr
 
 	targetWallet.Balance += transaction.Sum
 	targetWallet.ModifiedDate = time.Now()
+
 	_, err = tx.Exec(
 		ctx,
 		query,
 		targetWallet.Balance, targetWallet.ID, targetWallet.ModifiedDate)
-
 	if err != nil {
 		return nil, fmt.Errorf("tx.Exec(ctx, query, targetWallet.Sum, targetWallet.ID): %w", err)
 	}
