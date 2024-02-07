@@ -14,4 +14,5 @@ var (
 	ErrDuplicateTransaction   = errors.New("transactions id already exists")
 	ErrNilUUID                = errors.New("uuid is nil")
 	ErrDuplicateWallet        = errors.New("duplicate wallet")
+	ErrWalletWasChanged       = errors.New("wallet was changed in parallel")
 )

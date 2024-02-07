@@ -9,6 +9,7 @@ import (
 	"github.com/Saaghh/wallet/internal/config"
 	"github.com/Saaghh/wallet/internal/logger"
 	"github.com/Saaghh/wallet/internal/service"
+	"github.com/Saaghh/wallet/internal/service/currconv"
 	"github.com/Saaghh/wallet/internal/store"
 	migrate "github.com/rubenv/sql-migrate"
 	"go.uber.org/zap"
@@ -33,7 +34,9 @@ func main() {
 
 	zap.L().Info("successful migration")
 
-	srv := service.New(str)
+	converter := currconv.New()
+
+	srv := service.New(str, converter)
 
 	// no error handling for now
 	// check https://github.com/uber-go/zap/issues/991

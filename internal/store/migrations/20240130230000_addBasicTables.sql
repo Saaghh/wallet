@@ -10,7 +10,7 @@ CREATE TABLE wallets (
     id uuid not null unique primary key default gen_random_uuid(),
     owner_id uuid not null references users(id),
     currency varchar not null,
-    balance numeric not null default 0,
+    balance numeric not null default 0 CHECK ( balance >= 0 ),
     created_at timestamp with time zone default now(),
     modified_at timestamp with time zone default now(),
     name varchar,

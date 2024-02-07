@@ -31,6 +31,15 @@ type Transaction struct {
 	Sum            float64    `json:"sum"`
 }
 
+type Transfer struct {
+	ID            uuid.UUID
+	CreatedAt     time.Time
+	AgentWallet   *Wallet
+	SumToWithdraw float64
+	TargetWallet  *Wallet
+	SumToDeposit  float64
+}
+
 type UpdateWalletRequest struct {
 	Name     *string `json:"name,omitempty"`
 	Currency *string `json:"currency,omitempty"`
