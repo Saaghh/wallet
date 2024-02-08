@@ -143,6 +143,14 @@ func (s *APIServer) updateWallet(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusNotFound, "wallet not found")
 
 		return
+	case errors.Is(err, model.ErrDuplicateWallet):
+		writeErrorResponse(w, http.StatusUnprocessableEntity, "duplicate names not allowed")
+
+		return
+	case errors.Is(err, model.ErrWrongCurrency):
+		writeErrorResponse(w, http.StatusUnprocessableEntity, "wrong currency")
+
+		return
 	case err != nil:
 		zap.L().With(zap.Error(err)).Warn(
 			"updateWallet/s.service.UpdateWallet(r.Context(), id, updateRequest)")
@@ -189,22 +197,15 @@ func (s *APIServer) deposit(w http.ResponseWriter, r *http.Request) {
 	var requestTransaction model.Transaction
 
 	err := json.NewDecoder(r.Body).Decode(&requestTransaction)
-
-	switch {
-	case err != nil:
+	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "failed to read body")
 
 		return
-	case requestTransaction.Sum == 0:
-		writeErrorResponse(w, http.StatusUnprocessableEntity, "sum can't be zero")
+	}
 
-		return
-	case requestTransaction.Sum < 0:
-		writeErrorResponse(w, http.StatusUnprocessableEntity, "sum must be positive")
-
-		return
-	case requestTransaction.TargetWalletID == nil:
-		writeErrorResponse(w, http.StatusUnprocessableEntity, "target wallet not found")
+	err = requestTransaction.Validate()
+	if err != nil {
+		writeErrorResponse(w, http.StatusUnprocessableEntity, err.Error())
 
 		return
 	}
@@ -220,7 +221,7 @@ func (s *APIServer) deposit(w http.ResponseWriter, r *http.Request) {
 		fallthrough
 	case errors.Is(err, model.ErrNilUUID):
 		fallthrough
-	case errors.Is(err, model.ErrNegativeRequestBalance):
+	case errors.Is(err, model.ErrNegativeSum):
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "incorrect request data")
 
 		return
@@ -243,8 +244,16 @@ func (s *APIServer) deposit(w http.ResponseWriter, r *http.Request) {
 func (s *APIServer) transfer(w http.ResponseWriter, r *http.Request) {
 	var requestTransaction model.Transaction
 
-	if err := json.NewDecoder(r.Body).Decode(&requestTransaction); err != nil {
+	err := json.NewDecoder(r.Body).Decode(&requestTransaction)
+	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "failed to read body")
+
+		return
+	}
+
+	err = requestTransaction.Validate()
+	if err != nil {
+		writeErrorResponse(w, http.StatusUnprocessableEntity, err.Error())
 
 		return
 	}
@@ -259,10 +268,6 @@ func (s *APIServer) transfer(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, model.ErrNotEnoughBalance):
 		fallthrough
 	case errors.Is(err, model.ErrWrongCurrency):
-		fallthrough
-	case errors.Is(err, model.ErrNilUUID):
-		fallthrough
-	case errors.Is(err, model.ErrNegativeRequestBalance):
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "incorrect request data")
 
 		return
@@ -286,14 +291,15 @@ func (s *APIServer) withdraw(w http.ResponseWriter, r *http.Request) {
 	var requestTransaction model.Transaction
 
 	err := json.NewDecoder(r.Body).Decode(&requestTransaction)
-
-	switch {
-	case err != nil:
+	if err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "failed to read body")
 
 		return
-	case requestTransaction.Sum <= 0:
-		writeErrorResponse(w, http.StatusUnprocessableEntity, "sum must be >0")
+	}
+
+	err = requestTransaction.Validate()
+	if err != nil {
+		writeErrorResponse(w, http.StatusUnprocessableEntity, err.Error())
 
 		return
 	}
@@ -307,8 +313,6 @@ func (s *APIServer) withdraw(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusNotFound, "wallet not found")
 
 		return
-	case errors.Is(err, model.ErrNilUUID):
-		fallthrough
 	case errors.Is(err, model.ErrWrongCurrency):
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "incorrect request data")
 

@@ -16,18 +16,24 @@ type store interface {
 	UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error)
 
 	GetTransactions(ctx context.Context) ([]*model.Transaction, error)
-	Transfer(ctx context.Context, wtx model.Transaction) (*uuid.UUID, error)
+	Transfer(ctx context.Context, transfer model.Transfer, transaction model.Transaction) (*uuid.UUID, error)
 	ExternalTransaction(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error)
 	GetTransactionByID(ctx context.Context, id uuid.UUID) (*model.Transaction, error)
 }
 
-type Service struct {
-	db store
+type currencyConverter interface {
+	GetExchangeRate(baseCurrency, targetCurrency string) (float64, error)
 }
 
-func New(db store) *Service {
+type Service struct {
+	db store
+	cc currencyConverter
+}
+
+func New(db store, cc currencyConverter) *Service {
 	return &Service{
 		db: db,
+		cc: cc,
 	}
 }
 
@@ -49,9 +55,57 @@ func (s *Service) GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model
 	return wallet, nil
 }
 
+func (s *Service) transactionToTransfer(ctx context.Context, transaction model.Transaction) (*model.Transfer, error) {
+	agentWallet, err := s.db.GetWalletByID(ctx, *transaction.AgentWalletID)
+	if err != nil {
+		return nil, fmt.Errorf("s.db.GetWalletByID(ctx, *transaction.AgentWalletID): %w", err)
+	}
+
+	targetWallet, err := s.db.GetWalletByID(ctx, *transaction.TargetWalletID)
+	if err != nil {
+		return nil, fmt.Errorf("s.db.GetWalletByID(ctx, *transaction.TargetWallet): %w", err)
+	}
+
+	transfer := model.Transfer{
+		ID:           transaction.ID,
+		AgentWallet:  agentWallet,
+		TargetWallet: targetWallet,
+	}
+
+	if agentWallet.Currency != transaction.Currency {
+		xr, err := s.cc.GetExchangeRate(transaction.Currency, agentWallet.Currency)
+		if err != nil {
+			return nil, fmt.Errorf("s.cc.GetExchangeRate(transaction.Currency, agentWallet.Currency): %w", err)
+		}
+
+		transfer.SumToWithdraw = xr * transaction.Sum
+	} else {
+		transfer.SumToWithdraw = transaction.Sum
+	}
+
+	if targetWallet.Currency != transaction.Currency {
+		xr, err := s.cc.GetExchangeRate(transaction.Currency, agentWallet.Currency)
+		if err != nil {
+			return nil, fmt.Errorf("s.cc.GetExchangeRate(transaction.Currency, agentWallet.Currency): %w", err)
+		}
+
+		transfer.SumToDeposit = xr * transaction.Sum
+	} else {
+		transfer.SumToDeposit = transaction.Sum
+	}
+
+	return &transfer, nil
+}
+
 func (s *Service) Transfer(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error) {
+	// conversion
+	transfer, err := s.transactionToTransfer(ctx, transaction)
+	if err != nil {
+		return nil, fmt.Errorf("s.transactionToTransfer(ctx, transaction): %w", err)
+	}
+
 	// execution
-	transactionID, err := s.db.Transfer(ctx, transaction)
+	transactionID, err := s.db.Transfer(ctx, *transfer, transaction)
 	if err != nil {
 		return nil, fmt.Errorf("s.db.Transfer(ctx, transaction): %w", err)
 	}
@@ -60,6 +114,22 @@ func (s *Service) Transfer(ctx context.Context, transaction model.Transaction) (
 }
 
 func (s *Service) ExternalTransaction(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error) {
+	// conversion
+	wallet, err := s.db.GetWalletByID(ctx, *transaction.TargetWalletID)
+	if err != nil {
+		return nil, fmt.Errorf("s.db.GetWalletByID(ctx, *transaction.TargetWalletID): %w", err)
+	}
+
+	if wallet.Currency != transaction.Currency {
+		k, err := s.cc.GetExchangeRate(transaction.Currency, wallet.Currency)
+		if err != nil {
+			return nil, fmt.Errorf("s.cc.GetExchangeRate(transaction.Currency, wallet.Currency): %w", err)
+		}
+
+		transaction.Currency = wallet.Currency
+		transaction.Sum *= k
+	}
+
 	// execution
 	transactionID, err := s.db.ExternalTransaction(ctx, transaction)
 	if err != nil {
@@ -88,7 +158,23 @@ func (s *Service) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {
 }
 
 func (s *Service) UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error) {
-	wallet, err := s.db.UpdateWallet(ctx, walletID, request)
+	wallet, err := s.db.GetWalletByID(ctx, walletID)
+	if err != nil {
+		return nil, fmt.Errorf("s.db.GetWalletByID(ctx, walletID): %w", err)
+	}
+
+	if request.Currency != nil && *request.Currency != wallet.Currency {
+		xr, err := s.cc.GetExchangeRate(wallet.Currency, *request.Currency)
+		if err != nil {
+			return nil, fmt.Errorf("s.cc.GetExchangeRate(*request.Currency, wallet.Currency): %w", err)
+		}
+
+		request.ConversionRate = xr
+	} else {
+		request.ConversionRate = 1
+	}
+
+	wallet, err = s.db.UpdateWallet(ctx, walletID, request)
 	if err != nil {
 		return nil, fmt.Errorf("s.db.UpdateWallet(ctx, walletID, request): %w", err)
 	}

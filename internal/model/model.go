@@ -31,7 +31,32 @@ type Transaction struct {
 	Sum            float64    `json:"sum"`
 }
 
+type Transfer struct {
+	ID            uuid.UUID
+	CreatedAt     time.Time
+	AgentWallet   *Wallet
+	SumToWithdraw float64
+	TargetWallet  *Wallet
+	SumToDeposit  float64
+}
+
 type UpdateWalletRequest struct {
-	Name     *string `json:"name,omitempty"`
-	Currency *string `json:"currency,omitempty"`
+	Name           *string `json:"name,omitempty"`
+	Currency       *string `json:"currency,omitempty"`
+	ConversionRate float64 `json:"conversionRate,omitempty"`
+}
+
+func (t *Transaction) Validate() error {
+	switch {
+	case t.Sum == 0:
+		return ErrZeroSum
+	case t.Sum < 0:
+		return ErrNegativeSum
+	case t.TargetWalletID == nil:
+		return ErrWalletNotFound
+	case t.ID == uuid.Nil:
+		return ErrNilUUID
+	}
+
+	return nil
 }
