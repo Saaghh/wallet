@@ -69,30 +69,12 @@ func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*mode
 		return nil, model.ErrNilUUID
 	}
 
-	// Checking if user exists
-	query := `
-	SELECT FROM users
-	WHERE id = $1
-`
-	err := p.db.QueryRow(
-		ctx,
-		query,
-		wallet.OwnerID,
-	).Scan()
-
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return nil, model.ErrUserNotFound
-	case err != nil:
-		return nil, fmt.Errorf("p.db.QueryRow(): %w", err)
-	}
-
 	// Checking if name is free
-	query = `
+	query := `
 	SELECT FROM wallets
 	WHERE owner_id = $1 and name = $2 and is_disabled = false
 `
-	err = p.db.QueryRow(
+	err := p.db.QueryRow(
 		ctx,
 		query,
 		wallet.OwnerID, wallet.Name).Scan()
@@ -125,7 +107,13 @@ func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*mode
 		&wallet.CreatedDate,
 		&wallet.ModifiedDate,
 	)
-	if err != nil {
+
+	var pgErr *pgconn.PgError
+
+	switch {
+	case errors.As(err, &pgErr) && pgErr.Code == pgerrcode.ForeignKeyViolation:
+		return nil, model.ErrUserNotFound
+	case err != nil:
 		return nil, fmt.Errorf("p.db.QueryRow(): %w", err)
 	}
 
@@ -180,7 +168,7 @@ func (p *Postgres) GetTransactions(ctx context.Context) ([]*model.Transaction, e
 	for rows.Next() {
 		transaction := new(model.Transaction)
 
-		err := rows.Scan(
+		err = rows.Scan(
 			&transaction.ID,
 			&transaction.AgentWalletID,
 			&transaction.TargetWalletID,
@@ -192,10 +180,6 @@ func (p *Postgres) GetTransactions(ctx context.Context) ([]*model.Transaction, e
 		}
 
 		transactions = append(transactions, transaction)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows.Err(): %w", err)
 	}
 
 	if len(transactions) == 0 {
@@ -238,10 +222,6 @@ func (p *Postgres) GetWallets(ctx context.Context) ([]*model.Wallet, error) {
 		wallets = append(wallets, wallet)
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows.Err(): %w", err)
-	}
-
 	if len(wallets) == 0 {
 		return nil, model.ErrWalletNotFound
 	}
@@ -250,27 +230,22 @@ func (p *Postgres) GetWallets(ctx context.Context) ([]*model.Wallet, error) {
 }
 
 func (p *Postgres) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {
-	_, err := p.GetWalletByID(ctx, walletID)
-
-	switch {
-	case errors.Is(err, model.ErrWalletNotFound):
-		return model.ErrWalletNotFound
-	case err != nil:
-		return fmt.Errorf("p.GetWalletByID(ctx, walletID): %w", err)
-	}
-
 	query := `
 	UPDATE wallets
 	SET is_disabled = true, modified_at = $2
 	WHERE id = $1 AND is_disabled = false
+	RETURNING id
 `
-	err = p.db.QueryRow(
+	err := p.db.QueryRow(
 		ctx,
 		query,
 		walletID, time.Now(),
-	).Scan()
+	).Scan(nil)
 
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return model.ErrWalletNotFound
+	case err != nil:
 		return fmt.Errorf("p.db.QueryRow(...): %w", err)
 	}
 
@@ -358,11 +333,6 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 }
 
 func (p *Postgres) Transfer(ctx context.Context, transfer model.Transfer, transaction model.Transaction) (*uuid.UUID, error) {
-	// Verifying balance
-	if transfer.AgentWallet.Balance < transfer.SumToWithdraw {
-		return nil, model.ErrNotEnoughBalance
-	}
-
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("p.db.Begin(ctx): %w", err)
@@ -401,54 +371,57 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transfer, transa
 	}
 
 	// Moving Cash
-
-	var updatedAgentWallet, updatedTargetWallet model.Wallet
-
 	query = `
 	UPDATE wallets
-	SET balance = $1, modified_at = $3
+	SET balance = balance - $1, modified_at = $3
 	WHERE id = $2
-	RETURNING balance, currency
-`
-	// Withdrawing money
-	transfer.AgentWallet.Balance -= transfer.SumToWithdraw
-	transfer.AgentWallet.ModifiedDate = time.Now()
+	RETURNING currency`
+
+	var currency string
+
 	err = tx.QueryRow(
 		ctx,
 		query,
-		transfer.AgentWallet.Balance, transfer.AgentWallet.ID, transfer.AgentWallet.ModifiedDate,
+		transfer.SumToWithdraw, transfer.AgentWallet.ID, time.Now(),
 	).Scan(
-		&updatedAgentWallet.Balance,
-		&updatedAgentWallet.Currency,
+		&currency,
 	)
 
 	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, model.ErrWalletNotFound
+	case errors.As(err, &pgErr) && pgErr.Code == pgerrcode.CheckViolation:
+		return nil, model.ErrNotEnoughBalance
 	case err != nil:
 		return nil, fmt.Errorf("tx.QueryRow(AgentWallet).Scan(&updatedAgentWallet): %w", err)
-	case updatedAgentWallet.Currency != transfer.AgentWallet.Currency:
-		fallthrough
-	case updatedAgentWallet.Balance != transfer.AgentWallet.Balance:
+	case currency != transfer.AgentWallet.Currency:
 		return nil, model.ErrWalletWasChanged
 	}
 
 	// Depositing money
-	transfer.TargetWallet.Balance += transfer.SumToDeposit
-	transfer.TargetWallet.ModifiedDate = time.Now()
+
+	query = `
+	UPDATE wallets
+	SET balance = balance + $1, modified_at = $3
+	WHERE id = $2
+	RETURNING currency`
+
 	err = tx.QueryRow(
 		ctx,
 		query,
-		transfer.TargetWallet.Balance, transfer.TargetWallet.ID, transfer.TargetWallet.ModifiedDate,
+		transfer.SumToDeposit, transfer.TargetWallet.ID, time.Now(),
 	).Scan(
-		&updatedTargetWallet.Balance,
-		&updatedTargetWallet.Currency,
+		&currency,
 	)
 
 	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, model.ErrWalletNotFound
+	case errors.As(err, &pgErr) && pgErr.Code == pgerrcode.CheckViolation:
+		return nil, model.ErrNotEnoughBalance
 	case err != nil:
 		return nil, fmt.Errorf("tx.QueryRow(TargetWallet).Scan(&updatedTargetWallet): %w", err)
-	case updatedTargetWallet.Currency != transfer.TargetWallet.Currency:
-		fallthrough
-	case updatedTargetWallet.Balance != transfer.TargetWallet.Balance:
+	case currency != transfer.TargetWallet.Currency:
 		return nil, model.ErrWalletWasChanged
 	}
 
@@ -473,24 +446,12 @@ func (p *Postgres) ExternalTransaction(ctx context.Context, transaction model.Tr
 		}
 	}()
 
-	// Validate data
-	targetWallet, err := p.GetWalletByID(ctx, *transaction.TargetWalletID)
-
-	switch {
-	case err != nil:
-		return nil, fmt.Errorf("p.GetWalletByID(ctx, transaction.TargetWallet): %w", err)
-	case targetWallet.Balance+transaction.Sum < 0:
-		return nil, model.ErrNotEnoughBalance
-	case targetWallet.Currency != transaction.Currency:
-		return nil, model.ErrWalletWasChanged
-	}
-
 	// Save transaction
 	query := `
 	INSERT INTO transactions (id, to_wallet_id, currency, balance)
 	VALUES ($1, $2, $3, $4)
-	returning id, created_at
-`
+	returning id, created_at`
+
 	err = tx.QueryRow(
 		ctx,
 		query,
@@ -509,21 +470,30 @@ func (p *Postgres) ExternalTransaction(ctx context.Context, transaction model.Tr
 		return nil, fmt.Errorf("tx.QueryRow(): %w", err)
 	}
 
-	// Update balance
+	// Update wallet
 	query = `
 	UPDATE wallets
-	SET balance = $1, modified_at = $3
+	SET balance = balance + $1, modified_at = $3
 	WHERE id = $2
-`
+	RETURNING currency`
 
-	targetWallet.Balance += transaction.Sum
-	targetWallet.ModifiedDate = time.Now()
+	var currency string
 
-	_, err = tx.Exec(
+	err = tx.QueryRow(
 		ctx,
 		query,
-		targetWallet.Balance, targetWallet.ID, targetWallet.ModifiedDate)
-	if err != nil {
+		transaction.Sum, transaction.TargetWalletID, time.Now(),
+	).Scan(
+		&currency)
+
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, model.ErrWalletNotFound
+	case errors.As(err, &pgErr) && pgErr.Code == pgerrcode.CheckViolation:
+		return nil, model.ErrNotEnoughBalance
+	case currency != transaction.Currency:
+		return nil, model.ErrWalletWasChanged
+	case err != nil:
 		return nil, fmt.Errorf("tx.Exec(ctx, query, targetWallet.Sum, targetWallet.ID): %w", err)
 	}
 

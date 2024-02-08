@@ -55,7 +55,7 @@ func (s *Service) GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model
 	return wallet, nil
 }
 
-func (s *Service) transactionIntoTransfer(ctx context.Context, transaction model.Transaction) (*model.Transfer, error) {
+func (s *Service) transactionToTransfer(ctx context.Context, transaction model.Transaction) (*model.Transfer, error) {
 	agentWallet, err := s.db.GetWalletByID(ctx, *transaction.AgentWalletID)
 	if err != nil {
 		return nil, fmt.Errorf("s.db.GetWalletByID(ctx, *transaction.AgentWalletID): %w", err)
@@ -99,9 +99,9 @@ func (s *Service) transactionIntoTransfer(ctx context.Context, transaction model
 
 func (s *Service) Transfer(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error) {
 	// conversion
-	transfer, err := s.transactionIntoTransfer(ctx, transaction)
+	transfer, err := s.transactionToTransfer(ctx, transaction)
 	if err != nil {
-		return nil, fmt.Errorf("s.transactionIntoTransfer(ctx, transaction): %w", err)
+		return nil, fmt.Errorf("s.transactionToTransfer(ctx, transaction): %w", err)
 	}
 
 	// execution

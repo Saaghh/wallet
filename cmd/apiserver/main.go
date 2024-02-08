@@ -23,20 +23,20 @@ func main() {
 
 	logger.InitLogger(logger.Config{Level: cfg.LogLevel})
 
-	str, err := store.New(ctx, cfg)
+	pgStore, err := store.New(ctx, cfg)
 	if err != nil {
-		zap.L().With(zap.Error(err)).Panic("str.New")
+		zap.L().With(zap.Error(err)).Panic("pgStore.New")
 	}
 
-	if err := str.Migrate(migrate.Up); err != nil {
-		zap.L().With(zap.Error(err)).Panic("str.Migrate")
+	if err := pgStore.Migrate(migrate.Up); err != nil {
+		zap.L().With(zap.Error(err)).Panic("pgStore.Migrate")
 	}
 
 	zap.L().Info("successful migration")
 
 	converter := currconv.New()
 
-	srv := service.New(str, converter)
+	serviceLayer := service.New(pgStore, converter)
 
 	// no error handling for now
 	// check https://github.com/uber-go/zap/issues/991
@@ -45,7 +45,7 @@ func main() {
 
 	s := apiserver.New(apiserver.Config{
 		BindAddress: cfg.BindAddress,
-	}, srv)
+	}, serviceLayer)
 
 	if err := s.Run(ctx); err != nil {
 		zap.L().Panic(err.Error())

@@ -21,7 +21,6 @@ func New() *MockConverter {
 }
 
 func (c *MockConverter) GetExchangeRate(baseCurrency, targetCurrency string) (float64, error) {
-
 	baseK, ok := c.currencies[baseCurrency]
 	if !ok {
 		return 0, model.ErrWrongCurrency

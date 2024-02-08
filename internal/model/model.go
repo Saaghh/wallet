@@ -45,3 +45,18 @@ type UpdateWalletRequest struct {
 	Currency       *string `json:"currency,omitempty"`
 	ConversionRate float64 `json:"conversionRate,omitempty"`
 }
+
+func (t *Transaction) Validate() error {
+	switch {
+	case t.Sum == 0:
+		return ErrZeroSum
+	case t.Sum < 0:
+		return ErrNegativeSum
+	case t.TargetWalletID == nil:
+		return ErrWalletNotFound
+	case t.ID == uuid.Nil:
+		return ErrNilUUID
+	}
+
+	return nil
+}
