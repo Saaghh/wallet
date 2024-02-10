@@ -3,6 +3,7 @@ package model
 import (
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
@@ -59,4 +60,9 @@ func (t *Transaction) Validate() error {
 	}
 
 	return nil
+}
+
+type Claims struct {
+	jwt.RegisteredClaims
+	UUID uuid.UUID `json:"uuid"`
 }

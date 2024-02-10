@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,13 +17,14 @@ type APIServer struct {
 	cfg     Config
 	server  *http.Server
 	service service
+	key     *rsa.PublicKey
 }
 
 type Config struct {
 	BindAddress string
 }
 
-func New(cfg Config, service service) *APIServer {
+func New(cfg Config, service service, key *rsa.PublicKey) *APIServer {
 	router := chi.NewRouter()
 
 	return &APIServer{
@@ -34,6 +36,7 @@ func New(cfg Config, service service) *APIServer {
 			ReadHeaderTimeout: 5 * time.Second,
 			Handler:           router,
 		},
+		key: key,
 	}
 }
 
@@ -74,6 +77,8 @@ func (s *APIServer) Run(ctx context.Context) error {
 
 func (s *APIServer) configRouter() {
 	zap.L().Debug("configuring router")
+
+	s.router.Use(s.JWTAuth)
 
 	s.router.Route("/api", func(r chi.Router) {
 		r.Route("/v1", func(r chi.Router) {

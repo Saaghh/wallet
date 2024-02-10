@@ -7,9 +7,10 @@ import (
 
 	"github.com/Saaghh/wallet/internal/apiserver"
 	"github.com/Saaghh/wallet/internal/config"
+	"github.com/Saaghh/wallet/internal/currconv"
+	"github.com/Saaghh/wallet/internal/jwtgenerator"
 	"github.com/Saaghh/wallet/internal/logger"
 	"github.com/Saaghh/wallet/internal/service"
-	"github.com/Saaghh/wallet/internal/service/currconv"
 	"github.com/Saaghh/wallet/internal/store"
 	migrate "github.com/rubenv/sql-migrate"
 	"go.uber.org/zap"
@@ -38,6 +39,8 @@ func main() {
 
 	serviceLayer := service.New(pgStore, converter)
 
+	jwtGenerator := jwtgenerator.NewJWTGenerator()
+
 	// no error handling for now
 	// check https://github.com/uber-go/zap/issues/991
 	//nolint: errcheck
@@ -45,7 +48,7 @@ func main() {
 
 	s := apiserver.New(apiserver.Config{
 		BindAddress: cfg.BindAddress,
-	}, serviceLayer)
+	}, serviceLayer, jwtGenerator.GetPublicKey())
 
 	if err := s.Run(ctx); err != nil {
 		zap.L().Panic(err.Error())
