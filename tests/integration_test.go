@@ -32,8 +32,8 @@ const (
 	bindAddr             = "http://localhost:8080/api/v1"
 	currencyEUR          = "EUR"
 	currencyUSD          = "USD"
-	standartName         = "good wallet"
-	secondayName         = "better wallet"
+	standardName         = "good wallet"
+	secondaryName        = "better wallet"
 	thirdName            = "best wallet"
 	fourthName           = "fourth name wallet"
 	badRequestString     = "Lorem Ipsum?"
@@ -43,13 +43,15 @@ type IntegrationTestSuite struct {
 	suite.Suite
 	ctx *context.Context
 
-	testOwnerID uuid.UUID
+	testOwnerID   uuid.UUID
+	secondOwnerID uuid.UUID
 
 	str *store.Postgres
 
 	converter *currconv.MockConverter
 
-	authToken string
+	authToken       string
+	secondAuthToken string
 
 	tokenGenerator *jwtgenerator.JWTGenerator
 }
@@ -75,19 +77,23 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	err = str.Migrate(migrate.Up)
 	s.Require().NoError(err)
 
+	s.tokenGenerator = jwtgenerator.NewJWTGenerator()
+
 	user, err := str.CreateUser(ctx, model.User{Email: "test@test.com"})
 	s.Require().NoError(err)
-
 	s.testOwnerID = user.ID
+	s.authToken, err = s.tokenGenerator.GetNewTokenString(*user)
+	s.Require().NoError(err)
+
+	user, err = str.CreateUser(ctx, model.User{Email: "test2@test.com"})
+	s.Require().NoError(err)
+	s.secondOwnerID = user.ID
+	s.secondAuthToken, err = s.tokenGenerator.GetNewTokenString(*user)
+	s.Require().NoError(err)
 
 	s.str = str
 
 	s.converter = currconv.New()
-
-	s.tokenGenerator = jwtgenerator.NewJWTGenerator()
-
-	s.authToken, err = s.tokenGenerator.GetNewTokenString(*user)
-	s.Require().NoError(err)
 
 	converter := currconv.New()
 	srv := service.New(str, converter)
@@ -115,14 +121,14 @@ func (s *IntegrationTestSuite) TestWallets() {
 	wallet1 := model.Wallet{
 		OwnerID:  s.testOwnerID,
 		Currency: currencyEUR,
-		Name:     standartName,
+		Name:     standardName,
 		Balance:  0,
 	}
 
 	wallet2 := model.Wallet{
 		OwnerID:  s.testOwnerID,
 		Currency: currencyEUR,
-		Name:     secondayName,
+		Name:     secondaryName,
 		Balance:  0,
 	}
 
@@ -182,29 +188,38 @@ func (s *IntegrationTestSuite) TestWallets() {
 			s.Run("422/duplicate name", func() {
 				var respWalletData model.Wallet
 
-				resp := s.sendRequest(context.Background(), http.MethodPost, walletEndpoint, wallet1, &apiserver.HTTPResponse{Data: &respWalletData})
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodPost,
+					walletEndpoint,
+					wallet1,
+					&apiserver.HTTPResponse{Data: &respWalletData})
 				s.Require().Equal(http.StatusUnprocessableEntity, resp.StatusCode)
 			})
 
 			s.Run("400", func() {
-				resp := s.sendRequest(context.Background(), http.MethodPost, walletEndpoint, badRequestString, nil)
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodPost,
+					walletEndpoint,
+					badRequestString,
+					nil)
 				s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
-			})
-
-			s.Run("404", func() {
-				resp := s.sendRequest(context.Background(), http.MethodPost, walletEndpoint, model.Wallet{
-					OwnerID:  uuid.New(),
-					Currency: currencyEUR,
-					Name:     standartName,
-				}, nil)
-				s.Require().Equal(http.StatusNotFound, resp.StatusCode)
 			})
 		})
 
 		s.Run("GET:/wallets", func() {
 			s.Run("200", func() {
 				var wallets []model.Wallet
-				resp := s.sendRequest(context.Background(), http.MethodGet, walletEndpoint, nil, &apiserver.HTTPResponse{Data: &wallets})
+
+				params := "?limit=10&sorting=created_at&descending=true"
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+params,
+					nil,
+					&apiserver.HTTPResponse{Data: &wallets})
 
 				walletsFound := 0
 
@@ -220,9 +235,30 @@ func (s *IntegrationTestSuite) TestWallets() {
 			})
 
 			s.Run("404", func() {
-				// TODO get 404
+				var wallets []model.Wallet
 
-				s.Require().True(true)
+				temp := s.authToken
+				s.authToken = s.secondAuthToken
+				defer func() { s.authToken = temp }()
+
+				params := "?limit=10&sorting=created_at&descending=true"
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+params,
+					nil,
+					&apiserver.HTTPResponse{Data: &wallets})
+
+				walletsFound := 0
+
+				for _, value := range wallets {
+					if value.ID == wallet1.ID || value.ID == wallet2.ID || value.ID == wallet3.ID {
+						walletsFound++
+					}
+				}
+
+				s.Require().Equal(http.StatusNotFound, resp.StatusCode)
 			})
 		})
 	})
@@ -243,6 +279,18 @@ func (s *IntegrationTestSuite) TestWallets() {
 			s.Run("400", func() {
 				resp := s.sendRequest(context.Background(), http.MethodGet, walletEndpoint+"/"+badRequestString, nil, nil)
 				s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
+			})
+
+			s.Run("404/not allowed user", func() {
+				var respData model.Wallet
+
+				temp := s.authToken
+				s.authToken = s.secondAuthToken
+
+				resp := s.sendRequest(context.Background(), http.MethodGet, walletEndpoint+"/"+wallet1.ID.String(), nil, &apiserver.HTTPResponse{Data: &respData})
+				s.Require().Equal(http.StatusNotFound, resp.StatusCode)
+
+				s.authToken = temp
 			})
 
 			s.Run("404", func() {
@@ -324,7 +372,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				var respData model.Wallet
 
 				newCurrency := currencyUSD
-				newName := standartName
+				newName := standardName
 				wallet := &wallet2
 
 				resp := s.sendRequest(
@@ -341,6 +389,29 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 				wallet.Currency = newCurrency
 				wallet.Name = newName
+			})
+
+			s.Run("401", func() {
+				var respData model.Wallet
+
+				newCurrency := currencyUSD
+				newName := standardName
+				wallet := &wallet2
+
+				temp := s.authToken
+
+				s.authToken = s.secondAuthToken
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodPatch,
+					walletEndpoint+"/"+wallet.ID.String(),
+					model.UpdateWalletRequest{Currency: &newCurrency, Name: &newName},
+					&apiserver.HTTPResponse{Data: &respData})
+
+				s.authToken = temp
+
+				s.Require().Equal(http.StatusUnauthorized, resp.StatusCode)
 			})
 
 			s.Run("422", func() {
@@ -433,10 +504,13 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 				s.Run("no deleted wallet in full list", func() {
 					var wallets []model.Wallet
+
+					params := "?limit=10"
+
 					resp := s.sendRequest(
 						context.Background(),
 						http.MethodGet,
-						walletEndpoint,
+						walletEndpoint+params,
 						nil,
 						&apiserver.HTTPResponse{Data: &wallets})
 
@@ -980,15 +1054,36 @@ func (s *IntegrationTestSuite) TestWallets() {
 		s.Run("200", func() {
 			var transactions []model.Transaction
 
+			params := "?limit=10&sorting=created_at&descending=true"
+
 			resp := s.sendRequest(
 				context.Background(),
 				http.MethodGet,
-				transactionsEndpoint,
+				transactionsEndpoint+params,
 				nil,
 				&apiserver.HTTPResponse{Data: &transactions})
 
 			s.Require().Equal(http.StatusOK, resp.StatusCode)
 			s.Require().NotZero(len(transactions))
+		})
+
+		s.Run("404", func() {
+			var transactions []model.Transaction
+
+			temp := s.authToken
+			s.authToken = s.secondAuthToken
+			defer func() { s.authToken = temp }()
+
+			params := "?limit=10"
+
+			resp := s.sendRequest(
+				context.Background(),
+				http.MethodGet,
+				transactionsEndpoint+params,
+				nil,
+				&apiserver.HTTPResponse{Data: &transactions})
+
+			s.Require().Equal(http.StatusNotFound, resp.StatusCode)
 		})
 	})
 }

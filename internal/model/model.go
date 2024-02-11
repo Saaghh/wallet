@@ -10,6 +10,11 @@ import (
 	"github.com/google/uuid"
 )
 
+type ctxKey string
+
+const UserInfoKey ctxKey = "userInfo"
+const StandardPage int = 10
+
 type Wallet struct {
 	ID           uuid.UUID `json:"id"`
 	OwnerID      uuid.UUID `json:"ownerId"`
@@ -75,7 +80,7 @@ type GetParams struct {
 	Limit      int    `schema:"limit"`
 	Sorting    string `schema:"sorting"`
 	Descending bool   `schema:"descending"`
-	Filer      string `schema:"filer"`
+	Filter     string `schema:"filter"`
 }
 
 func ValuesToGetParams(values url.Values) (*GetParams, error) {
@@ -86,6 +91,10 @@ func ValuesToGetParams(values url.Values) (*GetParams, error) {
 	err := decoder.Decode(params, values)
 	if err != nil {
 		return nil, fmt.Errorf("decoder.Decode(params, values): %w", err)
+	}
+
+	if params.Limit == 0 {
+		params.Limit = StandardPage
 	}
 
 	return params, nil

@@ -24,11 +24,11 @@ type TransferResponse struct {
 type service interface {
 	CreateWallet(ctx context.Context, wallet model.Wallet) (*model.Wallet, error)
 	GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model.Wallet, error)
-	GetWallets(ctx context.Context) ([]*model.Wallet, error)
+	GetWallets(ctx context.Context, params model.GetParams) ([]*model.Wallet, error)
 	DeleteWallet(ctx context.Context, walletID uuid.UUID) error
 	UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error)
 
-	GetTransactions(ctx context.Context) ([]*model.Transaction, error)
+	GetTransactions(ctx context.Context, params model.GetParams) ([]*model.Transaction, error)
 	Transfer(ctx context.Context, wtx model.Transaction) (*uuid.UUID, error)
 	ExternalTransaction(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error)
 }
@@ -36,19 +36,19 @@ type service interface {
 func (s *APIServer) createWallet(w http.ResponseWriter, r *http.Request) {
 	var rWallet model.Wallet
 
+	userInfo := r.Context().Value(model.UserInfoKey).(model.UserInfo)
+
 	if err := json.NewDecoder(r.Body).Decode(&rWallet); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "failed to read body")
 
 		return
 	}
 
+	rWallet.OwnerID = userInfo.ID
+
 	wallet, err := s.service.CreateWallet(r.Context(), rWallet)
 
 	switch {
-	case errors.Is(err, model.ErrUserNotFound):
-		writeErrorResponse(w, http.StatusNotFound, "user not found")
-
-		return
 	case errors.Is(err, model.ErrNilUUID):
 		fallthrough
 	case errors.Is(err, model.ErrDuplicateWallet):
@@ -69,7 +69,16 @@ func (s *APIServer) createWallet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) getWallets(w http.ResponseWriter, r *http.Request) {
-	wallets, err := s.service.GetWallets(r.Context())
+
+	params, err := model.ValuesToGetParams(r.URL.Query())
+	if err != nil {
+		zap.L().With(zap.Error(err)).Warn("getWallets/model.ValuesToGetParams(r.URL.Query())")
+		writeErrorResponse(w, http.StatusBadRequest, "error reading query params")
+
+		return
+	}
+
+	wallets, err := s.service.GetWallets(r.Context(), *params)
 
 	switch {
 	case errors.Is(err, model.ErrWalletNotFound):
@@ -101,11 +110,12 @@ func (s *APIServer) getWalletByID(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, model.ErrNilUUID):
 		fallthrough
+	case errors.Is(err, model.ErrNotAllowed):
+		fallthrough
 	case errors.Is(err, model.ErrWalletNotFound):
 		writeErrorResponse(w, http.StatusNotFound, "wallet not found")
 
 		return
-
 	case err != nil:
 		zap.L().With(zap.Error(err)).Warn("getWalletByID/s.service.GetWalletByID(r.Context(), walletID))")
 		writeErrorResponse(w, http.StatusInternalServerError, "internal server error")
@@ -149,6 +159,10 @@ func (s *APIServer) updateWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, model.ErrWrongCurrency):
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "wrong currency")
+
+		return
+	case errors.Is(err, model.ErrNotAllowed):
+		writeErrorResponse(w, http.StatusUnauthorized, "operation not allowed")
 
 		return
 	case err != nil:
@@ -338,7 +352,15 @@ func (s *APIServer) withdraw(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) getTransactions(w http.ResponseWriter, r *http.Request) {
-	transactions, err := s.service.GetTransactions(r.Context())
+	params, err := model.ValuesToGetParams(r.URL.Query())
+	if err != nil {
+		zap.L().With(zap.Error(err)).Warn("getTransactions/model.ValuesToGetParams(r.URL.Query())")
+		writeErrorResponse(w, http.StatusBadRequest, "error reading query params")
+
+		return
+	}
+
+	transactions, err := s.service.GetTransactions(r.Context(), *params)
 
 	switch {
 	case errors.Is(err, model.ErrTransactionsNotFound):

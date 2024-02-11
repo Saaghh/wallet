@@ -11,14 +11,13 @@ import (
 type store interface {
 	CreateWallet(ctx context.Context, wallet model.Wallet) (*model.Wallet, error)
 	GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model.Wallet, error)
-	GetWallets(ctx context.Context) ([]*model.Wallet, error)
+	GetWallets(ctx context.Context, params model.GetParams) ([]*model.Wallet, error)
 	DeleteWallet(ctx context.Context, walletID uuid.UUID) error
 	UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error)
 
-	GetTransactions(ctx context.Context) ([]*model.Transaction, error)
+	GetTransactions(ctx context.Context, params model.GetParams) ([]*model.Transaction, error)
 	Transfer(ctx context.Context, transfer model.Transfer, transaction model.Transaction) (*uuid.UUID, error)
 	ExternalTransaction(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error)
-	GetTransactionByID(ctx context.Context, id uuid.UUID) (*model.Transaction, error)
 }
 
 type currencyConverter interface {
@@ -139,8 +138,8 @@ func (s *Service) ExternalTransaction(ctx context.Context, transaction model.Tra
 	return transactionID, nil
 }
 
-func (s *Service) GetWallets(ctx context.Context) ([]*model.Wallet, error) {
-	wallets, err := s.db.GetWallets(ctx)
+func (s *Service) GetWallets(ctx context.Context, params model.GetParams) ([]*model.Wallet, error) {
+	wallets, err := s.db.GetWallets(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("s.db.GetWallets(ctx, owner): %w", err)
 	}
@@ -163,6 +162,12 @@ func (s *Service) UpdateWallet(ctx context.Context, walletID uuid.UUID, request 
 		return nil, fmt.Errorf("s.db.GetWalletByID(ctx, walletID): %w", err)
 	}
 
+	userInfo := ctx.Value(model.UserInfoKey).(model.UserInfo)
+
+	if userInfo.ID != wallet.OwnerID {
+		return nil, model.ErrNotAllowed
+	}
+
 	if request.Currency != nil && *request.Currency != wallet.Currency {
 		xr, err := s.cc.GetExchangeRate(wallet.Currency, *request.Currency)
 		if err != nil {
@@ -182,8 +187,8 @@ func (s *Service) UpdateWallet(ctx context.Context, walletID uuid.UUID, request 
 	return wallet, nil
 }
 
-func (s *Service) GetTransactions(ctx context.Context) ([]*model.Transaction, error) {
-	transactions, err := s.db.GetTransactions(ctx)
+func (s *Service) GetTransactions(ctx context.Context, params model.GetParams) ([]*model.Transaction, error) {
+	transactions, err := s.db.GetTransactions(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("s.db.GetTransactions(ctx): %w", err)
 	}

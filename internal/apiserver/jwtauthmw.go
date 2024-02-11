@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-type ctxKey string
-
-const claimsKey ctxKey = "claims"
-
 func (s *APIServer) JWTAuth(next http.Handler) http.Handler {
 	var fn http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
 		claims, err := getClaimsFromHeader(r.Header.Get("Authorization"), s.key)
@@ -44,7 +40,7 @@ func (s *APIServer) JWTAuth(next http.Handler) http.Handler {
 			ID: claims.UUID,
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), claimsKey, &userInfo))
+		r = r.WithContext(context.WithValue(r.Context(), model.UserInfoKey, userInfo))
 		next.ServeHTTP(w, r)
 	}
 
