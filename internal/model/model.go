@@ -1,6 +1,9 @@
 package model
 
 import (
+	"fmt"
+	"github.com/gorilla/schema"
+	"net/url"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -65,4 +68,29 @@ func (t *Transaction) Validate() error {
 type Claims struct {
 	jwt.RegisteredClaims
 	UUID uuid.UUID `json:"uuid"`
+}
+
+type GetParams struct {
+	Offset     int    `schema:"offset"`
+	Limit      int    `schema:"limit"`
+	Sorting    string `schema:"sorting"`
+	Descending bool   `schema:"descending"`
+	Filer      string `schema:"filer"`
+}
+
+func ValuesToGetParams(values url.Values) (*GetParams, error) {
+	decoder := schema.NewDecoder()
+
+	params := &GetParams{}
+
+	err := decoder.Decode(params, values)
+	if err != nil {
+		return nil, fmt.Errorf("decoder.Decode(params, values): %w", err)
+	}
+
+	return params, nil
+}
+
+type UserInfo struct {
+	ID uuid.UUID
 }
