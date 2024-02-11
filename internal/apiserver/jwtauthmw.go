@@ -40,7 +40,11 @@ func (s *APIServer) JWTAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), claimsKey, *claims))
+		userInfo := model.UserInfo{
+			ID: claims.UUID,
+		}
+
+		r = r.WithContext(context.WithValue(r.Context(), claimsKey, &userInfo))
 		next.ServeHTTP(w, r)
 	}
 
