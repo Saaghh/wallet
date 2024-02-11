@@ -11,10 +11,11 @@ import (
 
 	"github.com/Saaghh/wallet/internal/apiserver"
 	"github.com/Saaghh/wallet/internal/config"
+	"github.com/Saaghh/wallet/internal/currconv"
+	"github.com/Saaghh/wallet/internal/jwtgenerator"
 	"github.com/Saaghh/wallet/internal/logger"
 	"github.com/Saaghh/wallet/internal/model"
 	"github.com/Saaghh/wallet/internal/service"
-	"github.com/Saaghh/wallet/internal/service/currconv"
 	"github.com/Saaghh/wallet/internal/store"
 	"github.com/google/uuid"
 	migrate "github.com/rubenv/sql-migrate"
@@ -47,6 +48,10 @@ type IntegrationTestSuite struct {
 	str *store.Postgres
 
 	converter *currconv.MockConverter
+
+	authToken string
+
+	tokenGenerator *jwtgenerator.JWTGenerator
 }
 
 func TestIntegrationTestSuite(t *testing.T) {
@@ -79,10 +84,15 @@ func (s *IntegrationTestSuite) SetupSuite() {
 
 	s.converter = currconv.New()
 
+	s.tokenGenerator = jwtgenerator.NewJWTGenerator()
+
+	s.authToken, err = s.tokenGenerator.GetNewTokenString(*user)
+	s.Require().NoError(err)
+
 	converter := currconv.New()
 	srv := service.New(str, converter)
 
-	server := apiserver.New(apiserver.Config{BindAddress: cfg.BindAddress}, srv)
+	server := apiserver.New(apiserver.Config{BindAddress: cfg.BindAddress}, srv, s.tokenGenerator.GetPublicKey())
 
 	go func() {
 		err = server.Run(ctx)
@@ -122,6 +132,22 @@ func (s *IntegrationTestSuite) TestWallets() {
 		Name:     thirdName,
 		Balance:  0,
 	}
+
+	s.Run("401", func() {
+		temp := s.authToken
+		s.authToken = ""
+
+		resp := s.sendRequest(
+			context.Background(),
+			http.MethodGet,
+			walletEndpoint,
+			nil,
+			nil)
+
+		s.Require().Equal(http.StatusUnauthorized, resp.StatusCode)
+
+		s.authToken = temp
+	})
 
 	s.Run("GET:/wallets/404", func() {
 		resp := s.sendRequest(
@@ -1006,6 +1032,8 @@ func (s *IntegrationTestSuite) sendRequest(ctx context.Context, method, endpoint
 	s.Require().NoError(err)
 
 	req.Header.Set("Content-Type", "application/json")
+
+	req.Header.Set("Authorization", "Bearer "+s.authToken)
 
 	resp, err := http.DefaultClient.Do(req)
 	s.Require().NoError(err)
