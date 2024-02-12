@@ -18,4 +18,5 @@ var (
 	ErrZeroSum              = errors.New("sum can't be zero")
 	ErrInvalidAccessToken   = errors.New("err invalid access token")
 	ErrNotAllowed           = errors.New("not allowed")
+	ErrUserInfoNotOk        = errors.New("user info type assertion not ok")
 )

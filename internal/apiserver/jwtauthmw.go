@@ -5,12 +5,13 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
-	"github.com/Saaghh/wallet/internal/model"
-	"github.com/golang-jwt/jwt/v5"
-	"go.uber.org/zap"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/Saaghh/wallet/internal/model"
+	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 )
 
 func (s *APIServer) JWTAuth(next http.Handler) http.Handler {

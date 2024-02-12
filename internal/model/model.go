@@ -2,18 +2,20 @@ package model
 
 import (
 	"fmt"
-	"github.com/gorilla/schema"
 	"net/url"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/gorilla/schema"
 )
 
 type ctxKey string
 
-const UserInfoKey ctxKey = "userInfo"
-const StandardPage int = 10
+const (
+	UserInfoKey  ctxKey = "userInfo"
+	StandardPage int    = 10
+)
 
 type Wallet struct {
 	ID           uuid.UUID `json:"id"`

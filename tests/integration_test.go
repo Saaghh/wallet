@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os/signal"
+	"sort"
+	"strconv"
 	"syscall"
 	"testing"
 
@@ -109,12 +112,6 @@ func (s *IntegrationTestSuite) SetupSuite() {
 func (s *IntegrationTestSuite) TearDownSuite() {
 	err := s.str.TruncateTables(context.Background())
 	s.Require().NoError(err)
-
-	err = s.str.TruncateTables(context.Background())
-	s.Require().NoError(err)
-
-	err = s.str.TruncateTables(context.Background())
-	s.Require().NoError(err)
 }
 
 func (s *IntegrationTestSuite) TestWallets() {
@@ -155,15 +152,18 @@ func (s *IntegrationTestSuite) TestWallets() {
 		s.authToken = temp
 	})
 
-	s.Run("GET:/wallets/404", func() {
+	s.Run("GET:/wallets/empty", func() {
+		wallets := make([]model.Wallet, 0)
+
 		resp := s.sendRequest(
 			context.Background(),
 			http.MethodGet,
 			walletEndpoint,
 			nil,
-			nil)
+			&apiserver.HTTPResponse{Data: &wallets})
 
-		s.Require().Equal(http.StatusNotFound, resp.StatusCode)
+		s.Require().Equal(http.StatusOK, resp.StatusCode)
+		s.Require().Zero(len(wallets))
 	})
 
 	s.Run("GET:/transactions", func() {
@@ -234,7 +234,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				s.Require().Equal(3, walletsFound)
 			})
 
-			s.Run("404", func() {
+			s.Run("200/empty array", func() {
 				var wallets []model.Wallet
 
 				temp := s.authToken
@@ -250,15 +250,8 @@ func (s *IntegrationTestSuite) TestWallets() {
 					nil,
 					&apiserver.HTTPResponse{Data: &wallets})
 
-				walletsFound := 0
-
-				for _, value := range wallets {
-					if value.ID == wallet1.ID || value.ID == wallet2.ID || value.ID == wallet3.ID {
-						walletsFound++
-					}
-				}
-
-				s.Require().Equal(http.StatusNotFound, resp.StatusCode)
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Zero(len(wallets))
 			})
 		})
 	})
@@ -1084,6 +1077,240 @@ func (s *IntegrationTestSuite) TestWallets() {
 				&apiserver.HTTPResponse{Data: &transactions})
 
 			s.Require().Equal(http.StatusNotFound, resp.StatusCode)
+		})
+	})
+
+	s.Run("listing", func() {
+		// create 29 wallets
+		// test paging
+		// test filtration
+		// test sorting
+		// test combos
+
+		// setup test cycle
+		temp := s.authToken
+		s.authToken = s.secondAuthToken
+		defer func() { s.authToken = temp }()
+
+		s.Run("create 29 wallets", func() {
+			for i := 0; i < 29; i++ {
+				wallet := model.Wallet{
+					Currency: currencyUSD,
+					Name:     strconv.Itoa(i),
+					OwnerID:  s.secondOwnerID,
+				}
+				s.checkWalletPost(&wallet)
+			}
+		})
+
+		s.Run("check pages", func() {
+			limit := 10
+			offset := 0
+
+			s.Run("page 1", func() {
+				query := fmt.Sprintf("?limit=%d&offset=%d", limit, offset)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Equal(limit, len(page))
+				for i := 0; i < len(page); i++ {
+					s.Require().Equal(strconv.Itoa(i), page[i].Name)
+				}
+			})
+
+			offset += 10
+
+			s.Run("page 2", func() {
+				query := fmt.Sprintf("?limit=%d&offset=%d", limit, offset)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Equal(limit, len(page))
+				for i := offset; i < len(page)+offset; i++ {
+					s.Require().Equal(strconv.Itoa(i), page[i-offset].Name)
+				}
+			})
+
+			offset += 10
+
+			s.Run("page 3", func() {
+				query := fmt.Sprintf("?limit=%d&offset=%d", limit, offset)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Greater(limit, len(page))
+				for i := offset; i < len(page)+offset; i++ {
+					s.Require().Equal(strconv.Itoa(i), page[i-offset].Name)
+				}
+			})
+
+			offset += 10
+
+			s.Run("page 4/404", func() {
+				query := fmt.Sprintf("?limit=%d&offset=%d", limit, offset)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Zero(len(page))
+			})
+		})
+
+		s.Run("check filters for 1", func() {
+			s.Run("1 in name", func() {
+				limit := 20
+				offset := 0
+				// filtering works only by name
+				filter := "1"
+				const walletsWithFilterInName int = 12
+
+				query := fmt.Sprintf("?limit=%d&offset=%d&filter=%s", limit, offset, filter)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Equal(walletsWithFilterInName, len(page))
+				for i := 0; i < len(page); i++ {
+					s.Require().Contains(page[i].Name, filter)
+				}
+			})
+
+			s.Run("0 in name", func() {
+				limit := 20
+				offset := 0
+				// filtering works only by name
+				filter := "0"
+				const walletsWithFilterInName int = 3
+
+				query := fmt.Sprintf("?limit=%d&offset=%d&filter=%s", limit, offset, filter)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Equal(walletsWithFilterInName, len(page))
+				for i := 0; i < len(page); i++ {
+					s.Require().Contains(page[i].Name, filter)
+				}
+			})
+
+			s.Run("letter a in name/404", func() {
+				limit := 20
+				offset := 0
+				// filtering works only by name
+				filter := "a"
+
+				query := fmt.Sprintf("?limit=%d&offset=%d&filter=%s", limit, offset, filter)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Zero(len(page))
+			})
+		})
+
+		s.Run("check sorting", func() {
+			s.Run("created_at, desc", func() {
+				sorting := "created_at"
+				descending := "true"
+
+				query := fmt.Sprintf("?sorting=%s&descending=%s", sorting, descending)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				for i := 1; i < len(page); i++ {
+					s.Require().True(page[i-1].CreatedDate.After(page[i].CreatedDate))
+				}
+			})
+
+			s.Run("name, asc", func() {
+				limit := 30
+				sorting := "name"
+				descending := "false"
+
+				query := fmt.Sprintf("?sorting=%s&descending=%s&limit=%d", sorting, descending, limit)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				// filling expected order
+				order := make([]string, 0)
+				for i := 0; i < len(page); i++ {
+					order = append(order, strconv.Itoa(i))
+				}
+				sort.Strings(order)
+
+				// checking if equal
+				for i := 0; i < len(page); i++ {
+					s.Require().Equal(order[i], page[i].Name)
+				}
+			})
 		})
 	})
 }

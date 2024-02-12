@@ -36,7 +36,11 @@ type service interface {
 func (s *APIServer) createWallet(w http.ResponseWriter, r *http.Request) {
 	var rWallet model.Wallet
 
-	userInfo := r.Context().Value(model.UserInfoKey).(model.UserInfo)
+	userInfo, ok := r.Context().Value(model.UserInfoKey).(model.UserInfo)
+	if !ok {
+		zap.L().With(zap.Error(model.ErrUserInfoNotOk)).Warn(
+			"createWallet/r.Context().Value(model.UserInfoKey).(model.UserInfo)")
+	}
 
 	if err := json.NewDecoder(r.Body).Decode(&rWallet); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "failed to read body")
@@ -69,7 +73,6 @@ func (s *APIServer) createWallet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) getWallets(w http.ResponseWriter, r *http.Request) {
-
 	params, err := model.ValuesToGetParams(r.URL.Query())
 	if err != nil {
 		zap.L().With(zap.Error(err)).Warn("getWallets/model.ValuesToGetParams(r.URL.Query())")
@@ -79,13 +82,7 @@ func (s *APIServer) getWallets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wallets, err := s.service.GetWallets(r.Context(), *params)
-
-	switch {
-	case errors.Is(err, model.ErrWalletNotFound):
-		writeErrorResponse(w, http.StatusNotFound, "wallets not found")
-
-		return
-	case err != nil:
+	if err != nil {
 		zap.L().With(zap.Error(err)).Warn("getWallets/s.service.GetWallets(r.Context(), rUser)")
 		writeErrorResponse(w, http.StatusInternalServerError, "internal server error")
 

@@ -162,7 +162,10 @@ func (s *Service) UpdateWallet(ctx context.Context, walletID uuid.UUID, request 
 		return nil, fmt.Errorf("s.db.GetWalletByID(ctx, walletID): %w", err)
 	}
 
-	userInfo := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	userInfo, ok := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	if !ok {
+		return nil, model.ErrUserInfoNotOk
+	}
 
 	if userInfo.ID != wallet.OwnerID {
 		return nil, model.ErrNotAllowed

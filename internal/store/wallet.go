@@ -122,7 +122,10 @@ func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*mode
 func (p *Postgres) GetWallets(ctx context.Context, params model.GetParams) ([]*model.Wallet, error) {
 	wallets := make([]*model.Wallet, 0, 1)
 
-	userInfo := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	userInfo, ok := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	if !ok {
+		return nil, model.ErrUserInfoNotOk
+	}
 
 	query := `
 	SELECT id, owner_id, currency, balance, created_at, modified_at, name
@@ -169,10 +172,6 @@ func (p *Postgres) GetWallets(ctx context.Context, params model.GetParams) ([]*m
 		wallets = append(wallets, wallet)
 	}
 
-	if len(wallets) == 0 {
-		return nil, model.ErrWalletNotFound
-	}
-
 	return wallets, nil
 }
 
@@ -197,7 +196,10 @@ func (p *Postgres) GetWalletByID(ctx context.Context, walletID uuid.UUID) (*mode
 		&wallet.Name,
 	)
 
-	userInfo := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	userInfo, ok := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	if !ok {
+		return nil, model.ErrUserInfoNotOk
+	}
 
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -498,7 +500,10 @@ func (p *Postgres) ExternalTransaction(ctx context.Context, transaction model.Tr
 func (p *Postgres) GetTransactions(ctx context.Context, params model.GetParams) ([]*model.Transaction, error) {
 	transactions := make([]*model.Transaction, 0, 1)
 
-	userInfo := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	userInfo, ok := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	if !ok {
+		return nil, model.ErrUserInfoNotOk
+	}
 
 	query := `
 	SELECT 
