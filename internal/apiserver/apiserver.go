@@ -60,7 +60,7 @@ func (s *APIServer) Run(ctx context.Context) error {
 
 		//nolint: contextcheck
 		if err := s.server.Shutdown(gfCtx); err != nil {
-			zap.L().With(zap.Error(err)).Warn("failed to gracefully shutdown http server")
+			zap.L().With(zap.Error(err)).Warn("failed to gracefully shutdown server")
 
 			return
 		}

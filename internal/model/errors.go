@@ -19,4 +19,5 @@ var (
 	ErrInvalidAccessToken   = errors.New("err invalid access token")
 	ErrNotAllowed           = errors.New("not allowed")
 	ErrUserInfoNotOk        = errors.New("user info type assertion not ok")
+	ErrGettingXR            = errors.New("error getting xr")
 )

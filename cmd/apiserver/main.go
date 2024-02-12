@@ -35,7 +35,7 @@ func main() {
 
 	zap.L().Info("successful migration")
 
-	converter := currconv.New()
+	converter := currconv.New(cfg.XRBindAddr)
 
 	serviceLayer := service.New(pgStore, converter)
 
@@ -46,9 +46,10 @@ func main() {
 	//nolint: errcheck
 	defer zap.L().Sync()
 
-	s := apiserver.New(apiserver.Config{
-		BindAddress: cfg.BindAddress,
-	}, serviceLayer, jwtGenerator.GetPublicKey())
+	s := apiserver.New(
+		apiserver.Config{BindAddress: cfg.BindAddress},
+		serviceLayer,
+		jwtGenerator.GetPublicKey())
 
 	if err := s.Run(ctx); err != nil {
 		zap.L().Panic(err.Error())

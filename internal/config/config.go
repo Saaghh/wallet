@@ -13,6 +13,8 @@ type Config struct {
 	PGDatabase string `env:"PG_DATABASE" env-default:"postgres"`
 	PGUser     string `env:"PG_USER" env-default:"user"`
 	PGPassword string `env:"PG_PASSWORD" env-default:"secret"`
+
+	XRBindAddr string `env:"XR_BIND_ADDR" env-default:":3030"`
 }
 
 func New() *Config {

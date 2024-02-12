@@ -105,3 +105,12 @@ func ValuesToGetParams(values url.Values) (*GetParams, error) {
 type UserInfo struct {
 	ID uuid.UUID
 }
+
+type XRRequest struct {
+	BaseCurrency   string `schema:"base"`
+	TargetCurrency string `schema:"target"`
+}
+
+type XRResponse struct {
+	XR float64 `json:"xr"`
+}

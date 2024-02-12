@@ -42,6 +42,10 @@ const (
 	badRequestString     = "Lorem Ipsum?"
 )
 
+type currencyConverter interface {
+	GetExchangeRate(baseCurrency, targetCurrency string) (float64, error)
+}
+
 type IntegrationTestSuite struct {
 	suite.Suite
 	ctx *context.Context
@@ -51,7 +55,7 @@ type IntegrationTestSuite struct {
 
 	str *store.Postgres
 
-	converter *currconv.MockConverter
+	converter currencyConverter
 
 	authToken       string
 	secondAuthToken string
@@ -96,10 +100,9 @@ func (s *IntegrationTestSuite) SetupSuite() {
 
 	s.str = str
 
-	s.converter = currconv.New()
+	s.converter = currconv.New(cfg.XRBindAddr)
 
-	converter := currconv.New()
-	srv := service.New(str, converter)
+	srv := service.New(str, s.converter)
 
 	server := apiserver.New(apiserver.Config{BindAddress: cfg.BindAddress}, srv, s.tokenGenerator.GetPublicKey())
 

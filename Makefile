@@ -1,5 +1,6 @@
 build:
 	go build -o ./bin/apiserver ./cmd/apiserver
+	go build -o ./bin/xrserver ./cmd/xrserver
 
 tidy:
 	go mod tidy
@@ -11,7 +12,10 @@ fmt:
 lint: tidy fmt build
 	golangci-lint run
 
-serve: up
+xr:
+	go run ./cmd/xrserver -d
+
+serve: up xr
 	go run ./cmd/apiserver
 
 up:
@@ -20,6 +24,6 @@ up:
 test: build up
 	go test -v ./tests
 
-.PHONY: build tidy fmt lint serve up test
+.PHONY: build tidy fmt lint serve up test xr
 
 .DEFAULT_GOAL := lint
