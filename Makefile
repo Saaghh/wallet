@@ -15,11 +15,11 @@ lint: tidy fmt build
 xr:
 	go run ./cmd/xrserver -d
 
-serve: up xr
+serve: up
 	go run ./cmd/apiserver
 
 up:
-	docker-compose up -d
+	docker compose up -d
 
 test: build up
 	go test -v ./tests
