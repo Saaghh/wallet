@@ -10,6 +10,7 @@ import (
 	"github.com/Saaghh/wallet/internal/currconv"
 	"github.com/Saaghh/wallet/internal/jwtgenerator"
 	"github.com/Saaghh/wallet/internal/logger"
+	"github.com/Saaghh/wallet/internal/prometrics"
 	"github.com/Saaghh/wallet/internal/service"
 	"github.com/Saaghh/wallet/internal/store"
 	migrate "github.com/rubenv/sql-migrate"
@@ -35,7 +36,9 @@ func main() {
 
 	zap.L().Info("successful migration")
 
-	converter := currconv.New(cfg.XRBindAddr)
+	metrics := prometrics.New()
+
+	converter := currconv.New(cfg.XRBindAddr, metrics)
 
 	serviceLayer := service.New(pgStore, converter)
 
@@ -49,7 +52,8 @@ func main() {
 	s := apiserver.New(
 		apiserver.Config{BindAddress: cfg.BindAddress},
 		serviceLayer,
-		jwtGenerator.GetPublicKey())
+		jwtGenerator.GetPublicKey(),
+		metrics)
 
 	if err := s.Run(ctx); err != nil {
 		zap.L().Panic(err.Error())

@@ -137,7 +137,7 @@ func (p *Postgres) GetWallets(ctx context.Context, params model.GetParams) ([]*m
 	}
 
 	if params.Sorting != "" {
-		query += " ORDER BY" + params.Sorting
+		query += " ORDER BY " + params.Sorting
 		if params.Descending {
 			query += " DESC"
 		}
@@ -527,7 +527,7 @@ func (p *Postgres) GetTransactions(ctx context.Context, params model.GetParams) 
 	}
 
 	if params.Sorting != "" {
-		query += " ORDER BY" + params.Sorting
+		query += " ORDER BY " + params.Sorting
 		if params.Descending {
 			query += " DESC"
 		}

@@ -12,19 +12,27 @@ import (
 	"go.uber.org/zap"
 )
 
+type metrics interface {
+	TrackExternalRequest(start time.Time, endpoint string)
+}
+
 type RemoteCurrencyConverter struct {
 	XRAddress string
+	metrics   metrics
 }
 
 const xrEndpoint string = "/xr"
 
-func New(xrBindAddr string) *RemoteCurrencyConverter {
+func New(xrBindAddr string, metrics metrics) *RemoteCurrencyConverter {
 	return &RemoteCurrencyConverter{
 		XRAddress: "http://localhost" + xrBindAddr + xrEndpoint,
+		metrics:   metrics,
 	}
 }
 
 func (c *RemoteCurrencyConverter) GetExchangeRate(baseCurrency, targetCurrency string) (float64, error) {
+	defer c.metrics.TrackExternalRequest(time.Now(), c.XRAddress)
+
 	queryParams := fmt.Sprintf("?base=%s&target=%s", baseCurrency, targetCurrency)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

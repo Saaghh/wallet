@@ -87,3 +87,13 @@ func getClaimsFromHeader(authHeader string, key *rsa.PublicKey) (*model.Claims, 
 
 	return claims, nil
 }
+
+func (s *APIServer) Metrics(next http.Handler) http.Handler {
+	var fn http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
+		defer s.metrics.TrackHTTPRequest(time.Now(), r)
+
+		next.ServeHTTP(w, r)
+	}
+
+	return fn
+}

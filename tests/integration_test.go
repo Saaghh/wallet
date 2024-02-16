@@ -18,6 +18,7 @@ import (
 	"github.com/Saaghh/wallet/internal/jwtgenerator"
 	"github.com/Saaghh/wallet/internal/logger"
 	"github.com/Saaghh/wallet/internal/model"
+	"github.com/Saaghh/wallet/internal/prometrics"
 	"github.com/Saaghh/wallet/internal/service"
 	"github.com/Saaghh/wallet/internal/store"
 	"github.com/google/uuid"
@@ -100,11 +101,13 @@ func (s *IntegrationTestSuite) SetupSuite() {
 
 	s.str = str
 
-	s.converter = currconv.New(cfg.XRBindAddr)
+	metrics := prometrics.New()
+
+	s.converter = currconv.New(cfg.XRBindAddr, metrics)
 
 	srv := service.New(str, s.converter)
 
-	server := apiserver.New(apiserver.Config{BindAddress: cfg.BindAddress}, srv, s.tokenGenerator.GetPublicKey())
+	server := apiserver.New(apiserver.Config{BindAddress: cfg.BindAddress}, srv, s.tokenGenerator.GetPublicKey(), metrics)
 
 	go func() {
 		err = server.Run(ctx)
