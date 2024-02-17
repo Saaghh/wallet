@@ -43,14 +43,15 @@ func (p *Postgres) TruncateTables(ctx context.Context) error {
 
 func (p *Postgres) CreateUser(ctx context.Context, user model.User) (*model.User, error) {
 	query := `
-	INSERT INTO users (email)
-	VALUES ($1)
+	INSERT INTO users (id, email)
+	VALUES ($1, $2)
 	RETURNING id, registered_at
 `
 
 	err := p.db.QueryRow(
 		ctx,
 		query,
+		uuid.New(),
 		user.Email,
 	).Scan(
 		&user.ID,
@@ -71,8 +72,7 @@ func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*mode
 	// Checking if name is free
 	query := `
 	SELECT FROM wallets
-	WHERE owner_id = $1 and name = $2 and is_disabled = false
-`
+	WHERE is_disabled = false and owner_id = $1 and name = $2`
 	err := p.db.QueryRow(
 		ctx,
 		query,
@@ -89,15 +89,17 @@ func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*mode
 
 	// Creating wallet
 	query = `
-    INSERT INTO wallets (owner_id, currency, name)
-    VALUES ($1, $2, $3)
-    RETURNING id, owner_id, currency, balance, created_at, modified_at
-`
+    INSERT INTO wallets (id, owner_id, currency, name)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id, owner_id, currency, balance, created_at, modified_at`
 
 	err = p.db.QueryRow(
 		ctx,
 		query,
-		wallet.OwnerID, wallet.Currency, wallet.Name,
+		uuid.New(),
+		wallet.OwnerID,
+		wallet.Currency,
+		wallet.Name,
 	).Scan(
 		&wallet.ID,
 		&wallet.OwnerID,
@@ -180,8 +182,8 @@ func (p *Postgres) GetWalletByID(ctx context.Context, walletID uuid.UUID) (*mode
 	query := `
 	SELECT id, owner_id, currency, balance, created_at, modified_at, name
 	FROM wallets
-	WHERE id = $1 AND is_disabled = false
-`
+	WHERE is_disabled = false and id = $1`
+
 	err := p.db.QueryRow(
 		ctx,
 		query,
@@ -235,7 +237,7 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 		// checking if name is free
 		query := `
 		SELECT FROM wallets
-		WHERE owner_id = $1 and name = $2 and is_disabled = false`
+		WHERE is_disabled = false and owner_id = $1 and name = $2`
 
 		err := p.db.QueryRow(
 			ctx,
@@ -254,9 +256,8 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 		query = `
 		UPDATE wallets
 		SET name = $2, modified_at = $3
-		WHERE id = $1 AND is_disabled = false
-		RETURNING id, name, modified_at
-	`
+		WHERE is_disabled = false and id = $1 
+		RETURNING id, name, modified_at`
 
 		err = tx.QueryRow(
 			ctx,
@@ -275,9 +276,8 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 		query := `
 		UPDATE wallets
 		SET currency = $2, modified_at = $3, balance = $4
-		WHERE id = $1 AND is_disabled = false
-		RETURNING id, currency, balance, modified_at
-	`
+		WHERE is_disabled = false and id = $1 
+		RETURNING id, currency, balance, modified_at`
 
 		err = tx.QueryRow(
 			ctx,
@@ -305,7 +305,7 @@ func (p *Postgres) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {
 	query := `
 	UPDATE wallets
 	SET is_disabled = true, modified_at = $2
-	WHERE id = $1 AND is_disabled = false
+	WHERE is_disabled = false and id = $1 
 	RETURNING id
 `
 	err := p.db.QueryRow(
@@ -341,8 +341,8 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transfer, transa
 	query := `
 	INSERT INTO transactions (id, from_wallet_id, to_wallet_id, currency, balance)
 	VALUES ($1, $2, $3, $4, $5)
-	returning id, created_at
-`
+	returning id, created_at`
+
 	err = tx.QueryRow(
 		ctx,
 		query,
@@ -366,7 +366,7 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transfer, transa
 	query = `
 	UPDATE wallets
 	SET balance = balance - $1, modified_at = $3
-	WHERE id = $2
+	WHERE is_disabled = false and id = $2 
 	RETURNING currency`
 
 	var currency string
@@ -395,7 +395,7 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transfer, transa
 	query = `
 	UPDATE wallets
 	SET balance = balance + $1, modified_at = $3
-	WHERE id = $2
+	WHERE is_disabled = false and id = $2
 	RETURNING currency`
 
 	err = tx.QueryRow(
@@ -567,4 +567,51 @@ func (p *Postgres) GetTransactions(ctx context.Context, params model.GetParams) 
 	}
 
 	return transactions, nil
+}
+
+func (p *Postgres) DisableInactiveWallets(ctx context.Context) ([]*model.Wallet, error) {
+	query := `
+	UPDATE wallets
+	SET is_disabled = true
+	WHERE modified_at < NOW() - INTERVAL '3 months' AND balance = 0
+	RETURNING id, owner_id, currency, balance, created_at, modified_at, name`
+
+	rows, err := p.db.Query(
+		ctx,
+		query)
+
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("p.db.Query: %w", err)
+	}
+
+	defer rows.Close()
+
+	var wallets []*model.Wallet
+
+	for rows.Next() {
+		var wallet model.Wallet
+
+		err = rows.Scan(
+			&wallet.ID,
+			&wallet.OwnerID,
+			&wallet.Currency,
+			&wallet.Balance,
+			&wallet.CreatedDate,
+			&wallet.ModifiedDate,
+			&wallet.Name)
+		if err != nil {
+			return nil, fmt.Errorf("rows.Scan: %w", err)
+		}
+
+		wallets = append(wallets, &wallet)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows.Err(): %w", err)
+	}
+
+	return wallets, nil
 }

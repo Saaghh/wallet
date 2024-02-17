@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,7 @@ type Server struct {
 	currencies map[string]float64
 	router     *chi.Mux
 	server     *http.Server
+	mutex      *sync.RWMutex
 }
 
 func New(bindAddr string) *Server {
@@ -31,6 +33,7 @@ func New(bindAddr string) *Server {
 	return &Server{
 		currencies: currencies,
 		router:     router,
+		mutex:      new(sync.RWMutex),
 		server: &http.Server{
 			Addr:              bindAddr,
 			ReadHeaderTimeout: 5 * time.Second,

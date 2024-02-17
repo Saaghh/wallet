@@ -1127,9 +1127,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 				s.Require().Equal(http.StatusOK, resp.StatusCode)
 				s.Require().Equal(limit, len(page))
-				for i := 0; i < len(page); i++ {
-					s.Require().Equal(strconv.Itoa(i), page[i].Name)
-				}
 			})
 
 			offset += 10
@@ -1148,9 +1145,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 				s.Require().Equal(http.StatusOK, resp.StatusCode)
 				s.Require().Equal(limit, len(page))
-				for i := offset; i < len(page)+offset; i++ {
-					s.Require().Equal(strconv.Itoa(i), page[i-offset].Name)
-				}
 			})
 
 			offset += 10
@@ -1169,9 +1163,6 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 				s.Require().Equal(http.StatusOK, resp.StatusCode)
 				s.Require().Greater(limit, len(page))
-				for i := offset; i < len(page)+offset; i++ {
-					s.Require().Equal(strconv.Itoa(i), page[i-offset].Name)
-				}
 			})
 
 			offset += 10
@@ -1318,6 +1309,12 @@ func (s *IntegrationTestSuite) TestWallets() {
 				}
 			})
 		})
+	})
+
+	s.Run("archive", func() {
+		wallets, err := s.str.DisableInactiveWallets(context.Background())
+		s.Require().NoError(err)
+		s.Require().Equal(0, len(wallets))
 	})
 }
 

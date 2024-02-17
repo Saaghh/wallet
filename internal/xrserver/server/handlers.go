@@ -48,6 +48,9 @@ func (s *Server) handleGetExchangeRate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getExchangeRate(baseCurrency, targetCurrency string) (float64, error) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
 	baseK, ok := s.currencies[baseCurrency]
 	if !ok {
 		return 0, model.ErrWrongCurrency

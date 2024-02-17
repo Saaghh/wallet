@@ -22,7 +22,6 @@ require (
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/crypto v0.17.0 // indirect
-	golang.org/x/sync v0.6.0 // indirect
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
@@ -41,4 +40,5 @@ require (
 	github.com/rubenv/sql-migrate v1.6.1
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/zap v1.26.0
+	golang.org/x/sync v0.6.0
 )

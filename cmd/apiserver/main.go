@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os/signal"
 	"syscall"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/Saaghh/wallet/internal/store"
 	migrate "github.com/rubenv/sql-migrate"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -24,6 +26,11 @@ func main() {
 	cfg := config.New()
 
 	logger.InitLogger(logger.Config{Level: cfg.LogLevel})
+
+	// no error handling for now
+	// check https://github.com/uber-go/zap/issues/991
+	//nolint: errcheck
+	defer zap.L().Sync()
 
 	pgStore, err := store.New(ctx, cfg)
 	if err != nil {
@@ -37,25 +44,29 @@ func main() {
 	zap.L().Info("successful migration")
 
 	metrics := prometrics.New()
-
 	converter := currconv.New(cfg.XRBindAddr, metrics)
-
 	serviceLayer := service.New(pgStore, converter)
-
 	jwtGenerator := jwtgenerator.NewJWTGenerator()
-
-	// no error handling for now
-	// check https://github.com/uber-go/zap/issues/991
-	//nolint: errcheck
-	defer zap.L().Sync()
-
-	s := apiserver.New(
+	server := apiserver.New(
 		apiserver.Config{BindAddress: cfg.BindAddress},
 		serviceLayer,
 		jwtGenerator.GetPublicKey(),
 		metrics)
 
-	if err := s.Run(ctx); err != nil {
-		zap.L().Panic(err.Error())
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		err = server.Run(ctx)
+
+		return fmt.Errorf("server.Run(ctx): %w", err)
+	})
+
+	eg.Go(func() error {
+		err = serviceLayer.ArchiverRun(ctx)
+
+		return fmt.Errorf("serviceLayer.ArchiverRun(ctx): %w", err)
+	})
+
+	if err = eg.Wait(); err != nil {
+		zap.L().With(zap.Error(err)).Panic("main/eg.Wait()")
 	}
 }

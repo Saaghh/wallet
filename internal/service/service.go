@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Saaghh/wallet/internal/model"
 	"github.com/google/uuid"
@@ -18,6 +19,8 @@ type store interface {
 	GetTransactions(ctx context.Context, params model.GetParams) ([]*model.Transaction, error)
 	Transfer(ctx context.Context, transfer model.Transfer, transaction model.Transaction) (*uuid.UUID, error)
 	ExternalTransaction(ctx context.Context, transaction model.Transaction) (*uuid.UUID, error)
+
+	DisableInactiveWallets(ctx context.Context) ([]*model.Wallet, error)
 }
 
 type currencyConverter interface {
@@ -197,4 +200,21 @@ func (s *Service) GetTransactions(ctx context.Context, params model.GetParams) (
 	}
 
 	return transactions, nil
+}
+
+func (s *Service) ArchiverRun(ctx context.Context) error {
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			_, err := s.db.DisableInactiveWallets(ctx)
+			if err != nil {
+				return fmt.Errorf("pg.TrackInactiveWallets: %w", err)
+			}
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
