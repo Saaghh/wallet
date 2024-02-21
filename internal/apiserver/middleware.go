@@ -5,17 +5,14 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
-	"github.com/Saaghh/wallet/internal/model"
-	"github.com/golang-jwt/jwt/v5"
-	"go.uber.org/zap"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/Saaghh/wallet/internal/model"
+	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 )
-
-type ctxKey string
-
-const claimsKey ctxKey = "claims"
 
 func (s *APIServer) JWTAuth(next http.Handler) http.Handler {
 	var fn http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +41,7 @@ func (s *APIServer) JWTAuth(next http.Handler) http.Handler {
 			ID: claims.UUID,
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), claimsKey, &userInfo))
+		r = r.WithContext(context.WithValue(r.Context(), model.UserInfoKey, userInfo))
 		next.ServeHTTP(w, r)
 	}
 
@@ -89,4 +86,14 @@ func getClaimsFromHeader(authHeader string, key *rsa.PublicKey) (*model.Claims, 
 	}
 
 	return claims, nil
+}
+
+func (s *APIServer) Metrics(next http.Handler) http.Handler {
+	var fn http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
+		defer s.metrics.TrackHTTPRequest(time.Now(), r)
+
+		next.ServeHTTP(w, r)
+	}
+
+	return fn
 }

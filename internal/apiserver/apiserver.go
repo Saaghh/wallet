@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -18,25 +19,31 @@ type APIServer struct {
 	server  *http.Server
 	service service
 	key     *rsa.PublicKey
+	metrics metrics
+}
+
+type metrics interface {
+	TrackHTTPRequest(start time.Time, r *http.Request)
 }
 
 type Config struct {
 	BindAddress string
 }
 
-func New(cfg Config, service service, key *rsa.PublicKey) *APIServer {
+func New(cfg Config, service service, key *rsa.PublicKey, metrics metrics) *APIServer {
 	router := chi.NewRouter()
 
 	return &APIServer{
 		cfg:     cfg,
 		service: service,
 		router:  router,
+		key:     key,
+		metrics: metrics,
 		server: &http.Server{
 			Addr:              cfg.BindAddress,
 			ReadHeaderTimeout: 5 * time.Second,
 			Handler:           router,
 		},
-		key: key,
 	}
 }
 
@@ -60,7 +67,7 @@ func (s *APIServer) Run(ctx context.Context) error {
 
 		//nolint: contextcheck
 		if err := s.server.Shutdown(gfCtx); err != nil {
-			zap.L().With(zap.Error(err)).Warn("failed to gracefully shutdown http server")
+			zap.L().With(zap.Error(err)).Warn("failed to gracefully shutdown server")
 
 			return
 		}
@@ -78,9 +85,10 @@ func (s *APIServer) Run(ctx context.Context) error {
 func (s *APIServer) configRouter() {
 	zap.L().Debug("configuring router")
 
-	s.router.Use(s.JWTAuth)
-
 	s.router.Route("/api", func(r chi.Router) {
+		r.Use(s.Metrics)
+		r.Use(s.JWTAuth)
+
 		r.Route("/v1", func(r chi.Router) {
 			r.Post("/wallets", s.createWallet)
 			r.Get("/wallets", s.getWallets)
@@ -95,4 +103,6 @@ func (s *APIServer) configRouter() {
 			r.Get("/wallets/transactions", s.getTransactions)
 		})
 	})
+
+	s.router.Get("/metrics", promhttp.Handler().ServeHTTP)
 }

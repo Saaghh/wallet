@@ -4,23 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http"
-	"os/signal"
-	"syscall"
-	"testing"
-
+	"fmt"
 	"github.com/Saaghh/wallet/internal/apiserver"
 	"github.com/Saaghh/wallet/internal/config"
 	"github.com/Saaghh/wallet/internal/currconv"
 	"github.com/Saaghh/wallet/internal/jwtgenerator"
 	"github.com/Saaghh/wallet/internal/logger"
 	"github.com/Saaghh/wallet/internal/model"
+	"github.com/Saaghh/wallet/internal/prometrics"
 	"github.com/Saaghh/wallet/internal/service"
 	"github.com/Saaghh/wallet/internal/store"
 	"github.com/google/uuid"
 	migrate "github.com/rubenv/sql-migrate"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
+	"net/http"
+	"os/signal"
+	"sort"
+	"strconv"
+	"syscall"
+	"testing"
 )
 
 const (
@@ -32,24 +35,30 @@ const (
 	bindAddr             = "http://localhost:8080/api/v1"
 	currencyEUR          = "EUR"
 	currencyUSD          = "USD"
-	standartName         = "good wallet"
-	secondayName         = "better wallet"
+	standardName         = "good wallet"
+	secondaryName        = "better wallet"
 	thirdName            = "best wallet"
 	fourthName           = "fourth name wallet"
 	badRequestString     = "Lorem Ipsum?"
 )
 
+type currencyConverter interface {
+	GetExchangeRate(baseCurrency, targetCurrency string) (float64, error)
+}
+
 type IntegrationTestSuite struct {
 	suite.Suite
 	ctx *context.Context
 
-	testOwnerID uuid.UUID
+	testOwnerID   uuid.UUID
+	secondOwnerID uuid.UUID
 
 	str *store.Postgres
 
-	converter *currconv.MockConverter
+	converter currencyConverter
 
-	authToken string
+	authToken       string
+	secondAuthToken string
 
 	tokenGenerator *jwtgenerator.JWTGenerator
 }
@@ -75,24 +84,29 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	err = str.Migrate(migrate.Up)
 	s.Require().NoError(err)
 
-	user, err := str.CreateUser(ctx, model.User{Email: "test@test.com"})
-	s.Require().NoError(err)
-
-	s.testOwnerID = user.ID
-
-	s.str = str
-
-	s.converter = currconv.New()
-
 	s.tokenGenerator = jwtgenerator.NewJWTGenerator()
 
+	user, err := str.CreateUser(ctx, model.User{Email: "test@test.com"})
+	s.Require().NoError(err)
+	s.testOwnerID = user.ID
 	s.authToken, err = s.tokenGenerator.GetNewTokenString(*user)
 	s.Require().NoError(err)
 
-	converter := currconv.New()
-	srv := service.New(str, converter)
+	user, err = str.CreateUser(ctx, model.User{Email: "test2@test.com"})
+	s.Require().NoError(err)
+	s.secondOwnerID = user.ID
+	s.secondAuthToken, err = s.tokenGenerator.GetNewTokenString(*user)
+	s.Require().NoError(err)
 
-	server := apiserver.New(apiserver.Config{BindAddress: cfg.BindAddress}, srv, s.tokenGenerator.GetPublicKey())
+	s.str = str
+
+	metrics := prometrics.New()
+
+	s.converter = currconv.New(cfg.XRBindAddr, metrics)
+
+	srv := service.New(str, s.converter)
+
+	server := apiserver.New(apiserver.Config{BindAddress: cfg.BindAddress}, srv, s.tokenGenerator.GetPublicKey(), metrics)
 
 	go func() {
 		err = server.Run(ctx)
@@ -103,26 +117,20 @@ func (s *IntegrationTestSuite) SetupSuite() {
 func (s *IntegrationTestSuite) TearDownSuite() {
 	err := s.str.TruncateTables(context.Background())
 	s.Require().NoError(err)
-
-	err = s.str.TruncateTables(context.Background())
-	s.Require().NoError(err)
-
-	err = s.str.TruncateTables(context.Background())
-	s.Require().NoError(err)
 }
 
 func (s *IntegrationTestSuite) TestWallets() {
 	wallet1 := model.Wallet{
 		OwnerID:  s.testOwnerID,
 		Currency: currencyEUR,
-		Name:     standartName,
+		Name:     standardName,
 		Balance:  0,
 	}
 
 	wallet2 := model.Wallet{
 		OwnerID:  s.testOwnerID,
 		Currency: currencyEUR,
-		Name:     secondayName,
+		Name:     secondaryName,
 		Balance:  0,
 	}
 
@@ -149,15 +157,18 @@ func (s *IntegrationTestSuite) TestWallets() {
 		s.authToken = temp
 	})
 
-	s.Run("GET:/wallets/404", func() {
+	s.Run("GET:/wallets/empty", func() {
+		wallets := make([]model.Wallet, 0)
+
 		resp := s.sendRequest(
 			context.Background(),
 			http.MethodGet,
 			walletEndpoint,
 			nil,
-			nil)
+			&apiserver.HTTPResponse{Data: &wallets})
 
-		s.Require().Equal(http.StatusNotFound, resp.StatusCode)
+		s.Require().Equal(http.StatusOK, resp.StatusCode)
+		s.Require().Zero(len(wallets))
 	})
 
 	s.Run("GET:/transactions", func() {
@@ -182,29 +193,38 @@ func (s *IntegrationTestSuite) TestWallets() {
 			s.Run("422/duplicate name", func() {
 				var respWalletData model.Wallet
 
-				resp := s.sendRequest(context.Background(), http.MethodPost, walletEndpoint, wallet1, &apiserver.HTTPResponse{Data: &respWalletData})
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodPost,
+					walletEndpoint,
+					wallet1,
+					&apiserver.HTTPResponse{Data: &respWalletData})
 				s.Require().Equal(http.StatusUnprocessableEntity, resp.StatusCode)
 			})
 
 			s.Run("400", func() {
-				resp := s.sendRequest(context.Background(), http.MethodPost, walletEndpoint, badRequestString, nil)
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodPost,
+					walletEndpoint,
+					badRequestString,
+					nil)
 				s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
-			})
-
-			s.Run("404", func() {
-				resp := s.sendRequest(context.Background(), http.MethodPost, walletEndpoint, model.Wallet{
-					OwnerID:  uuid.New(),
-					Currency: currencyEUR,
-					Name:     standartName,
-				}, nil)
-				s.Require().Equal(http.StatusNotFound, resp.StatusCode)
 			})
 		})
 
 		s.Run("GET:/wallets", func() {
 			s.Run("200", func() {
 				var wallets []model.Wallet
-				resp := s.sendRequest(context.Background(), http.MethodGet, walletEndpoint, nil, &apiserver.HTTPResponse{Data: &wallets})
+
+				params := "?limit=10&sorting=created_at&descending=true"
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+params,
+					nil,
+					&apiserver.HTTPResponse{Data: &wallets})
 
 				walletsFound := 0
 
@@ -219,10 +239,24 @@ func (s *IntegrationTestSuite) TestWallets() {
 				s.Require().Equal(3, walletsFound)
 			})
 
-			s.Run("404", func() {
-				// TODO get 404
+			s.Run("200/empty array", func() {
+				var wallets []model.Wallet
 
-				s.Require().True(true)
+				temp := s.authToken
+				s.authToken = s.secondAuthToken
+				defer func() { s.authToken = temp }()
+
+				params := "?limit=10&sorting=created_at&descending=true"
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+params,
+					nil,
+					&apiserver.HTTPResponse{Data: &wallets})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Zero(len(wallets))
 			})
 		})
 	})
@@ -243,6 +277,18 @@ func (s *IntegrationTestSuite) TestWallets() {
 			s.Run("400", func() {
 				resp := s.sendRequest(context.Background(), http.MethodGet, walletEndpoint+"/"+badRequestString, nil, nil)
 				s.Require().Equal(http.StatusBadRequest, resp.StatusCode)
+			})
+
+			s.Run("404/not allowed user", func() {
+				var respData model.Wallet
+
+				temp := s.authToken
+				s.authToken = s.secondAuthToken
+
+				resp := s.sendRequest(context.Background(), http.MethodGet, walletEndpoint+"/"+wallet1.ID.String(), nil, &apiserver.HTTPResponse{Data: &respData})
+				s.Require().Equal(http.StatusNotFound, resp.StatusCode)
+
+				s.authToken = temp
 			})
 
 			s.Run("404", func() {
@@ -324,7 +370,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 				var respData model.Wallet
 
 				newCurrency := currencyUSD
-				newName := standartName
+				newName := standardName
 				wallet := &wallet2
 
 				resp := s.sendRequest(
@@ -341,6 +387,29 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 				wallet.Currency = newCurrency
 				wallet.Name = newName
+			})
+
+			s.Run("401", func() {
+				var respData model.Wallet
+
+				newCurrency := currencyUSD
+				newName := standardName
+				wallet := &wallet2
+
+				temp := s.authToken
+
+				s.authToken = s.secondAuthToken
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodPatch,
+					walletEndpoint+"/"+wallet.ID.String(),
+					model.UpdateWalletRequest{Currency: &newCurrency, Name: &newName},
+					&apiserver.HTTPResponse{Data: &respData})
+
+				s.authToken = temp
+
+				s.Require().Equal(http.StatusUnauthorized, resp.StatusCode)
 			})
 
 			s.Run("422", func() {
@@ -433,10 +502,13 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 				s.Run("no deleted wallet in full list", func() {
 					var wallets []model.Wallet
+
+					params := "?limit=10"
+
 					resp := s.sendRequest(
 						context.Background(),
 						http.MethodGet,
-						walletEndpoint,
+						walletEndpoint+params,
 						nil,
 						&apiserver.HTTPResponse{Data: &wallets})
 
@@ -980,16 +1052,268 @@ func (s *IntegrationTestSuite) TestWallets() {
 		s.Run("200", func() {
 			var transactions []model.Transaction
 
+			params := "?limit=10&sorting=created_at&descending=true"
+
 			resp := s.sendRequest(
 				context.Background(),
 				http.MethodGet,
-				transactionsEndpoint,
+				transactionsEndpoint+params,
 				nil,
 				&apiserver.HTTPResponse{Data: &transactions})
 
 			s.Require().Equal(http.StatusOK, resp.StatusCode)
 			s.Require().NotZero(len(transactions))
 		})
+
+		s.Run("404", func() {
+			var transactions []model.Transaction
+
+			temp := s.authToken
+			s.authToken = s.secondAuthToken
+			defer func() { s.authToken = temp }()
+
+			params := "?limit=10"
+
+			resp := s.sendRequest(
+				context.Background(),
+				http.MethodGet,
+				transactionsEndpoint+params,
+				nil,
+				&apiserver.HTTPResponse{Data: &transactions})
+
+			s.Require().Equal(http.StatusNotFound, resp.StatusCode)
+		})
+	})
+
+	s.Run("listing", func() {
+		// create 29 wallets
+		// test paging
+		// test filtration
+		// test sorting
+		// test combos
+
+		// setup test cycle
+		temp := s.authToken
+		s.authToken = s.secondAuthToken
+		defer func() { s.authToken = temp }()
+
+		s.Run("create 29 wallets", func() {
+			for i := 0; i < 29; i++ {
+				wallet := model.Wallet{
+					Currency: currencyUSD,
+					Name:     strconv.Itoa(i),
+					OwnerID:  s.secondOwnerID,
+				}
+				s.checkWalletPost(&wallet)
+			}
+		})
+
+		s.Run("check pages", func() {
+			limit := 10
+			offset := 0
+
+			s.Run("page 1", func() {
+				query := fmt.Sprintf("?limit=%d&offset=%d", limit, offset)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Equal(limit, len(page))
+			})
+
+			offset += 10
+
+			s.Run("page 2", func() {
+				query := fmt.Sprintf("?limit=%d&offset=%d", limit, offset)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Equal(limit, len(page))
+			})
+
+			offset += 10
+
+			s.Run("page 3", func() {
+				query := fmt.Sprintf("?limit=%d&offset=%d", limit, offset)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Greater(limit, len(page))
+			})
+
+			offset += 10
+
+			s.Run("page 4/404", func() {
+				query := fmt.Sprintf("?limit=%d&offset=%d", limit, offset)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Zero(len(page))
+			})
+		})
+
+		s.Run("check filters for 1", func() {
+			s.Run("1 in name", func() {
+				limit := 20
+				offset := 0
+				// filtering works only by name
+				filter := "1"
+				const walletsWithFilterInName int = 12
+
+				query := fmt.Sprintf("?limit=%d&offset=%d&filter=%s", limit, offset, filter)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Equal(walletsWithFilterInName, len(page))
+				for i := 0; i < len(page); i++ {
+					s.Require().Contains(page[i].Name, filter)
+				}
+			})
+
+			s.Run("0 in name", func() {
+				limit := 20
+				offset := 0
+				// filtering works only by name
+				filter := "0"
+				const walletsWithFilterInName int = 3
+
+				query := fmt.Sprintf("?limit=%d&offset=%d&filter=%s", limit, offset, filter)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Equal(walletsWithFilterInName, len(page))
+				for i := 0; i < len(page); i++ {
+					s.Require().Contains(page[i].Name, filter)
+				}
+			})
+
+			s.Run("letter a in name/404", func() {
+				limit := 20
+				offset := 0
+				// filtering works only by name
+				filter := "a"
+
+				query := fmt.Sprintf("?limit=%d&offset=%d&filter=%s", limit, offset, filter)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				s.Require().Zero(len(page))
+			})
+		})
+
+		s.Run("check sorting", func() {
+			s.Run("created_at, desc", func() {
+				sorting := "created_at"
+				descending := "true"
+
+				query := fmt.Sprintf("?sorting=%s&descending=%s", sorting, descending)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				for i := 1; i < len(page); i++ {
+					s.Require().True(page[i-1].CreatedDate.After(page[i].CreatedDate))
+				}
+			})
+
+			s.Run("name, asc", func() {
+				limit := 30
+				sorting := "name"
+				descending := "false"
+
+				query := fmt.Sprintf("?sorting=%s&descending=%s&limit=%d", sorting, descending, limit)
+
+				var page []model.Wallet
+
+				resp := s.sendRequest(
+					context.Background(),
+					http.MethodGet,
+					walletEndpoint+query,
+					nil,
+					&apiserver.HTTPResponse{Data: &page})
+
+				s.Require().Equal(http.StatusOK, resp.StatusCode)
+				// filling expected order
+				order := make([]string, 0)
+				for i := 0; i < len(page); i++ {
+					order = append(order, strconv.Itoa(i))
+				}
+				sort.Strings(order)
+
+				// checking if equal
+				for i := 0; i < len(page); i++ {
+					s.Require().Equal(order[i], page[i].Name)
+				}
+			})
+		})
+	})
+
+	s.Run("archive", func() {
+		wallets, err := s.str.DisableInactiveWallets(context.Background())
+		s.Require().NoError(err)
+		s.Require().Equal(0, len(wallets))
 	})
 }
 

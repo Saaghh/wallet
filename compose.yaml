@@ -11,3 +11,11 @@ services:
     ports:
       - '5432:5432'
     command: ['postgres', '-c', 'log_statement=all']
+
+  xr:
+    build:
+      context: .
+      dockerfile: ./deployments/xrserver/Dockerfile
+    container_name: xr-server
+    ports:
+      - '3030:3030'

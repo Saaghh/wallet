@@ -2,12 +2,19 @@ package model
 
 import (
 	"fmt"
-	"github.com/gorilla/schema"
 	"net/url"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/gorilla/schema"
+)
+
+type ctxKey string
+
+const (
+	UserInfoKey  ctxKey = "userInfo"
+	StandardPage int    = 10
 )
 
 type Wallet struct {
@@ -75,7 +82,7 @@ type GetParams struct {
 	Limit      int    `schema:"limit"`
 	Sorting    string `schema:"sorting"`
 	Descending bool   `schema:"descending"`
-	Filer      string `schema:"filer"`
+	Filter     string `schema:"filter"`
 }
 
 func ValuesToGetParams(values url.Values) (*GetParams, error) {
@@ -88,9 +95,22 @@ func ValuesToGetParams(values url.Values) (*GetParams, error) {
 		return nil, fmt.Errorf("decoder.Decode(params, values): %w", err)
 	}
 
+	if params.Limit == 0 {
+		params.Limit = StandardPage
+	}
+
 	return params, nil
 }
 
 type UserInfo struct {
 	ID uuid.UUID
+}
+
+type XRRequest struct {
+	BaseCurrency   string `schema:"base"`
+	TargetCurrency string `schema:"target"`
+}
+
+type XRResponse struct {
+	XR float64 `json:"xr"`
 }

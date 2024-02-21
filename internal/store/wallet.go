@@ -1,5 +1,4 @@
 //go:build !MySql
-// +build !MySql
 
 package store
 
@@ -16,28 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/zap"
 )
-
-func (p *Postgres) CreateUser(ctx context.Context, user model.User) (*model.User, error) {
-	query := `
-	INSERT INTO users (email)
-	VALUES ($1)
-	RETURNING id, registered_at
-`
-
-	err := p.db.QueryRow(
-		ctx,
-		query,
-		user.Email,
-	).Scan(
-		&user.ID,
-		&user.RegDate,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("p.db.QueryRow(...): %w", err)
-	}
-
-	return &user, nil
-}
 
 func (p *Postgres) TruncateTables(ctx context.Context) error {
 	_, err := p.db.Exec(
@@ -64,6 +41,29 @@ func (p *Postgres) TruncateTables(ctx context.Context) error {
 	return nil
 }
 
+func (p *Postgres) CreateUser(ctx context.Context, user model.User) (*model.User, error) {
+	query := `
+	INSERT INTO users (id, email)
+	VALUES ($1, $2)
+	RETURNING id, registered_at
+`
+
+	err := p.db.QueryRow(
+		ctx,
+		query,
+		uuid.New(),
+		user.Email,
+	).Scan(
+		&user.ID,
+		&user.RegDate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("p.db.QueryRow(...): %w", err)
+	}
+
+	return &user, nil
+}
+
 func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*model.Wallet, error) {
 	if wallet.OwnerID == uuid.Nil {
 		return nil, model.ErrNilUUID
@@ -72,8 +72,7 @@ func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*mode
 	// Checking if name is free
 	query := `
 	SELECT FROM wallets
-	WHERE owner_id = $1 and name = $2 and is_disabled = false
-`
+	WHERE is_disabled = false and owner_id = $1 and name = $2`
 	err := p.db.QueryRow(
 		ctx,
 		query,
@@ -90,15 +89,17 @@ func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*mode
 
 	// Creating wallet
 	query = `
-    INSERT INTO wallets (owner_id, currency, name)
-    VALUES ($1, $2, $3)
-    RETURNING id, owner_id, currency, balance, created_at, modified_at
-`
+    INSERT INTO wallets (id, owner_id, currency, name)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id, owner_id, currency, balance, created_at, modified_at`
 
 	err = p.db.QueryRow(
 		ctx,
 		query,
-		wallet.OwnerID, wallet.Currency, wallet.Name,
+		uuid.New(),
+		wallet.OwnerID,
+		wallet.Currency,
+		wallet.Name,
 	).Scan(
 		&wallet.ID,
 		&wallet.OwnerID,
@@ -120,85 +121,36 @@ func (p *Postgres) CreateWallet(ctx context.Context, wallet model.Wallet) (*mode
 	return &wallet, nil
 }
 
-func (p *Postgres) GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model.Wallet, error) {
-	wallet := new(model.Wallet)
-	query := `
-	SELECT id, owner_id, currency, balance, created_at, modified_at, name
-	FROM wallets
-	WHERE id = $1 AND is_disabled = false
-`
-	err := p.db.QueryRow(
-		ctx,
-		query,
-		walletID,
-	).Scan(
-		&wallet.ID,
-		&wallet.OwnerID,
-		&wallet.Currency,
-		&wallet.Balance,
-		&wallet.CreatedDate,
-		&wallet.ModifiedDate,
-		&wallet.Name,
-	)
-
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return nil, model.ErrWalletNotFound
-	case err != nil:
-		return nil, fmt.Errorf("p.db.QueryRow: %w", err)
-	}
-
-	return wallet, nil
-}
-
-func (p *Postgres) GetTransactions(ctx context.Context) ([]*model.Transaction, error) {
-	transactions := make([]*model.Transaction, 0, 1)
-
-	query := `
-	SELECT id, from_wallet_id, to_wallet_id, currency, balance, created_at
-	FROM transactions
-`
-
-	rows, err := p.db.Query(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("p.db.Query(ctx, query): %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		transaction := new(model.Transaction)
-
-		err = rows.Scan(
-			&transaction.ID,
-			&transaction.AgentWalletID,
-			&transaction.TargetWalletID,
-			&transaction.Currency,
-			&transaction.Sum,
-			&transaction.CreatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("rows.Scan(...): %w", err)
-		}
-
-		transactions = append(transactions, transaction)
-	}
-
-	if len(transactions) == 0 {
-		return nil, model.ErrTransactionsNotFound
-	}
-
-	return transactions, nil
-}
-
-func (p *Postgres) GetWallets(ctx context.Context) ([]*model.Wallet, error) {
+func (p *Postgres) GetWallets(ctx context.Context, params model.GetParams) ([]*model.Wallet, error) {
 	wallets := make([]*model.Wallet, 0, 1)
 
+	userInfo, ok := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	if !ok {
+		return nil, model.ErrUserInfoNotOk
+	}
+
 	query := `
 	SELECT id, owner_id, currency, balance, created_at, modified_at, name
 	FROM wallets
-	WHERE is_disabled = false
-`
+	WHERE is_disabled = false AND owner_id = $1`
 
-	rows, err := p.db.Query(ctx, query)
+	if params.Filter != "" {
+		query += fmt.Sprintf(" AND name LIKE '%%%s%%'", params.Filter)
+	}
+
+	if params.Sorting != "" {
+		query += " ORDER BY " + params.Sorting
+		if params.Descending {
+			query += " DESC"
+		}
+	}
+
+	query += fmt.Sprintf(" OFFSET %d LIMIT %d", params.Offset, params.Limit)
+
+	rows, err := p.db.Query(
+		ctx,
+		query,
+		userInfo.ID)
 	if err != nil {
 		return nil, fmt.Errorf("p.db.Query(ctx, query, owner.ID): %w", err)
 	}
@@ -222,34 +174,45 @@ func (p *Postgres) GetWallets(ctx context.Context) ([]*model.Wallet, error) {
 		wallets = append(wallets, wallet)
 	}
 
-	if len(wallets) == 0 {
-		return nil, model.ErrWalletNotFound
-	}
-
 	return wallets, nil
 }
 
-func (p *Postgres) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {
+func (p *Postgres) GetWalletByID(ctx context.Context, walletID uuid.UUID) (*model.Wallet, error) {
+	wallet := new(model.Wallet)
 	query := `
-	UPDATE wallets
-	SET is_disabled = true, modified_at = $2
-	WHERE id = $1 AND is_disabled = false
-	RETURNING id
-`
+	SELECT id, owner_id, currency, balance, created_at, modified_at, name
+	FROM wallets
+	WHERE is_disabled = false and id = $1`
+
 	err := p.db.QueryRow(
 		ctx,
 		query,
-		walletID, time.Now(),
-	).Scan(nil)
+		walletID,
+	).Scan(
+		&wallet.ID,
+		&wallet.OwnerID,
+		&wallet.Currency,
+		&wallet.Balance,
+		&wallet.CreatedDate,
+		&wallet.ModifiedDate,
+		&wallet.Name,
+	)
+
+	userInfo, ok := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	if !ok {
+		return nil, model.ErrUserInfoNotOk
+	}
 
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return model.ErrWalletNotFound
+		return nil, model.ErrWalletNotFound
 	case err != nil:
-		return fmt.Errorf("p.db.QueryRow(...): %w", err)
+		return nil, fmt.Errorf("p.db.QueryRow: %w", err)
+	case wallet.OwnerID != userInfo.ID:
+		return nil, model.ErrNotAllowed
 	}
 
-	return nil
+	return wallet, nil
 }
 
 func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request model.UpdateWalletRequest) (*model.Wallet, error) {
@@ -271,23 +234,30 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 	}()
 
 	if request.Name != nil {
-		wallets, err := p.GetWallets(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("p.GetWallets(ctx): %w", err)
-		}
-
-		for _, value := range wallets {
-			if value.Name == *request.Name {
-				return nil, model.ErrDuplicateWallet
-			}
-		}
-
+		// checking if name is free
 		query := `
+		SELECT FROM wallets
+		WHERE is_disabled = false and owner_id = $1 and name = $2`
+
+		err := p.db.QueryRow(
+			ctx,
+			query,
+			wallet.OwnerID, request.Name).Scan()
+
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			break
+		case err != nil:
+			return nil, fmt.Errorf("p.db.QueryRow(...): %w", err)
+		default:
+			return nil, model.ErrDuplicateWallet
+		}
+
+		query = `
 		UPDATE wallets
 		SET name = $2, modified_at = $3
-		WHERE id = $1 AND is_disabled = false
-		RETURNING id, name, modified_at
-	`
+		WHERE is_disabled = false and id = $1 
+		RETURNING id, name, modified_at`
 
 		err = tx.QueryRow(
 			ctx,
@@ -306,9 +276,8 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 		query := `
 		UPDATE wallets
 		SET currency = $2, modified_at = $3, balance = $4
-		WHERE id = $1 AND is_disabled = false
-		RETURNING id, currency, balance, modified_at
-	`
+		WHERE is_disabled = false and id = $1 
+		RETURNING id, currency, balance, modified_at`
 
 		err = tx.QueryRow(
 			ctx,
@@ -332,6 +301,29 @@ func (p *Postgres) UpdateWallet(ctx context.Context, walletID uuid.UUID, request
 	return wallet, nil
 }
 
+func (p *Postgres) DeleteWallet(ctx context.Context, walletID uuid.UUID) error {
+	query := `
+	UPDATE wallets
+	SET is_disabled = true, modified_at = $2
+	WHERE is_disabled = false and id = $1 
+	RETURNING id
+`
+	err := p.db.QueryRow(
+		ctx,
+		query,
+		walletID, time.Now(),
+	).Scan(nil)
+
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return model.ErrWalletNotFound
+	case err != nil:
+		return fmt.Errorf("p.db.QueryRow(...): %w", err)
+	}
+
+	return nil
+}
+
 func (p *Postgres) Transfer(ctx context.Context, transfer model.Transfer, transaction model.Transaction) (*uuid.UUID, error) {
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
@@ -349,8 +341,8 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transfer, transa
 	query := `
 	INSERT INTO transactions (id, from_wallet_id, to_wallet_id, currency, balance)
 	VALUES ($1, $2, $3, $4, $5)
-	returning id, created_at
-`
+	returning id, created_at`
+
 	err = tx.QueryRow(
 		ctx,
 		query,
@@ -374,7 +366,7 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transfer, transa
 	query = `
 	UPDATE wallets
 	SET balance = balance - $1, modified_at = $3
-	WHERE id = $2
+	WHERE is_disabled = false and id = $2 
 	RETURNING currency`
 
 	var currency string
@@ -403,7 +395,7 @@ func (p *Postgres) Transfer(ctx context.Context, transfer model.Transfer, transa
 	query = `
 	UPDATE wallets
 	SET balance = balance + $1, modified_at = $3
-	WHERE id = $2
+	WHERE is_disabled = false and id = $2
 	RETURNING currency`
 
 	err = tx.QueryRow(
@@ -505,38 +497,121 @@ func (p *Postgres) ExternalTransaction(ctx context.Context, transaction model.Tr
 	return &transaction.ID, nil
 }
 
-func (p *Postgres) GetTransactionByID(ctx context.Context, id uuid.UUID) (*model.Transaction, error) {
-	if id == uuid.Nil {
-		return nil, model.ErrNilUUID
+func (p *Postgres) GetTransactions(ctx context.Context, params model.GetParams) ([]*model.Transaction, error) {
+	transactions := make([]*model.Transaction, 0, 1)
+
+	userInfo, ok := ctx.Value(model.UserInfoKey).(model.UserInfo)
+	if !ok {
+		return nil, model.ErrUserInfoNotOk
 	}
 
 	query := `
-	SELECT id, created_at, to_wallet_id, from_wallet_id, currency, balance
-	FROM transactions
-	WHERE id = $1
-`
+	SELECT 
+		transactions.id, 
+		transactions.from_wallet_id, 
+		transactions.to_wallet_id, 
+		transactions.currency, 
+		transactions.balance, 
+		transactions.created_at
+	FROM 
+		transactions
+	JOIN 
+		wallets AS sender_wallet ON transactions.from_wallet_id = sender_wallet.id
+	JOIN 
+		wallets AS receiver_wallet ON transactions.to_wallet_id = receiver_wallet.id
+	WHERE 
+		sender_wallet.owner_id = $1 OR receiver_wallet.owner_id = $1`
 
-	var transaction model.Transaction
+	if params.Filter != "" {
+		query += fmt.Sprintf(" AND currency LIKE '%%%s%%'", params.Filter)
+	}
 
-	err := p.db.QueryRow(
+	if params.Sorting != "" {
+		query += " ORDER BY " + params.Sorting
+		if params.Descending {
+			query += " DESC"
+		}
+	}
+
+	query += fmt.Sprintf(" OFFSET %d LIMIT %d", params.Offset, params.Limit)
+
+	rows, err := p.db.Query(
 		ctx,
 		query,
-		id,
-	).Scan(
-		&transaction.ID,
-		&transaction.CreatedAt,
-		&transaction.TargetWalletID,
-		&transaction.AgentWalletID,
-		&transaction.Currency,
-		&transaction.Sum,
+		userInfo.ID,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("p.db.Query(ctx, query): %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		transaction := new(model.Transaction)
+
+		err = rows.Scan(
+			&transaction.ID,
+			&transaction.AgentWalletID,
+			&transaction.TargetWalletID,
+			&transaction.Currency,
+			&transaction.Sum,
+			&transaction.CreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("rows.Scan(...): %w", err)
+		}
+
+		transactions = append(transactions, transaction)
+	}
+
+	if len(transactions) == 0 {
+		return nil, model.ErrTransactionsNotFound
+	}
+
+	return transactions, nil
+}
+
+func (p *Postgres) DisableInactiveWallets(ctx context.Context) ([]*model.Wallet, error) {
+	query := `
+	UPDATE wallets
+	SET is_disabled = true
+	WHERE modified_at < NOW() - INTERVAL '3 months' AND balance = 0
+	RETURNING id, owner_id, currency, balance, created_at, modified_at, name`
+
+	rows, err := p.db.Query(
+		ctx,
+		query)
 
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return nil, model.ErrTransactionsNotFound
+		return nil, nil
 	case err != nil:
-		return nil, fmt.Errorf("p.db.QueryRow(...): %w", err)
+		return nil, fmt.Errorf("p.db.Query: %w", err)
 	}
 
-	return &transaction, nil
+	defer rows.Close()
+
+	var wallets []*model.Wallet
+
+	for rows.Next() {
+		var wallet model.Wallet
+
+		err = rows.Scan(
+			&wallet.ID,
+			&wallet.OwnerID,
+			&wallet.Currency,
+			&wallet.Balance,
+			&wallet.CreatedDate,
+			&wallet.ModifiedDate,
+			&wallet.Name)
+		if err != nil {
+			return nil, fmt.Errorf("rows.Scan: %w", err)
+		}
+
+		wallets = append(wallets, &wallet)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows.Err(): %w", err)
+	}
+
+	return wallets, nil
 }
