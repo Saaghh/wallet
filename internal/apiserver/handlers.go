@@ -68,8 +68,6 @@ func (s *APIServer) createWallet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeOkResponse(w, http.StatusCreated, wallet)
-
-	zap.L().Debug("successful POST:/wallet", zap.String("client", r.RemoteAddr))
 }
 
 func (s *APIServer) getWallets(w http.ResponseWriter, r *http.Request) {
@@ -90,8 +88,6 @@ func (s *APIServer) getWallets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeOkResponse(w, http.StatusOK, wallets)
-
-	zap.L().Debug("successful GET:/wallets", zap.String("client", r.RemoteAddr))
 }
 
 func (s *APIServer) getWalletByID(w http.ResponseWriter, r *http.Request) {
@@ -121,8 +117,6 @@ func (s *APIServer) getWalletByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeOkResponse(w, http.StatusOK, wallet)
-
-	zap.L().Debug("successful GET:/wallets/{id}", zap.String("client", r.RemoteAddr))
 }
 
 func (s *APIServer) updateWallet(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +138,8 @@ func (s *APIServer) updateWallet(w http.ResponseWriter, r *http.Request) {
 	wallet, err := s.service.UpdateWallet(r.Context(), id, updateRequest)
 
 	switch {
+	case errors.Is(err, model.ErrNotAllowed):
+		fallthrough
 	case errors.Is(err, model.ErrNilUUID):
 		fallthrough
 	case errors.Is(err, model.ErrWalletNotFound):
@@ -158,10 +154,6 @@ func (s *APIServer) updateWallet(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusUnprocessableEntity, "wrong currency")
 
 		return
-	case errors.Is(err, model.ErrNotAllowed):
-		writeErrorResponse(w, http.StatusUnauthorized, "operation not allowed")
-
-		return
 	case err != nil:
 		zap.L().With(zap.Error(err)).Warn(
 			"updateWallet/s.service.UpdateWallet(r.Context(), id, updateRequest)")
@@ -171,8 +163,6 @@ func (s *APIServer) updateWallet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeOkResponse(w, http.StatusOK, wallet)
-
-	zap.L().Debug("successful PATCH:/wallets/{id}", zap.String("client", r.RemoteAddr))
 }
 
 func (s *APIServer) deleteWallet(w http.ResponseWriter, r *http.Request) {
@@ -200,8 +190,6 @@ func (s *APIServer) deleteWallet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-
-	zap.L().Debug("successful DELETE:/wallets/{id}", zap.String("client", r.RemoteAddr))
 }
 
 func (s *APIServer) deposit(w http.ResponseWriter, r *http.Request) {
@@ -248,8 +236,6 @@ func (s *APIServer) deposit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeOkResponse(w, http.StatusOK, TransferResponse{TransactionID: *transferID})
-
-	zap.L().Debug("successful PUT:/deposit", zap.String("client", r.RemoteAddr))
 }
 
 func (s *APIServer) transfer(w http.ResponseWriter, r *http.Request) {
@@ -294,8 +280,6 @@ func (s *APIServer) transfer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeOkResponse(w, http.StatusOK, TransferResponse{TransactionID: *transferID})
-
-	zap.L().Debug("successful PUT:/transfer", zap.String("client", r.RemoteAddr))
 }
 
 func (s *APIServer) withdraw(w http.ResponseWriter, r *http.Request) {
@@ -344,8 +328,6 @@ func (s *APIServer) withdraw(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeOkResponse(w, http.StatusOK, TransferResponse{TransactionID: *transferID})
-
-	zap.L().Debug("successful PUT:/withdraw", zap.String("client", r.RemoteAddr))
 }
 
 func (s *APIServer) getTransactions(w http.ResponseWriter, r *http.Request) {
@@ -372,8 +354,6 @@ func (s *APIServer) getTransactions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeOkResponse(w, http.StatusOK, transactions)
-
-	zap.L().Debug("successful GET:/wallets/transactions", zap.String("client", r.RemoteAddr))
 }
 
 func writeOkResponse(w http.ResponseWriter, statusCode int, data any) {

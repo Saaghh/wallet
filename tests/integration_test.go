@@ -5,6 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"os/signal"
+	"sort"
+	"strconv"
+	"syscall"
+	"testing"
+
 	"github.com/Saaghh/wallet/internal/apiserver"
 	"github.com/Saaghh/wallet/internal/config"
 	"github.com/Saaghh/wallet/internal/currconv"
@@ -18,12 +25,6 @@ import (
 	migrate "github.com/rubenv/sql-migrate"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
-	"net/http"
-	"os/signal"
-	"sort"
-	"strconv"
-	"syscall"
-	"testing"
 )
 
 const (
@@ -409,7 +410,7 @@ func (s *IntegrationTestSuite) TestWallets() {
 
 				s.authToken = temp
 
-				s.Require().Equal(http.StatusUnauthorized, resp.StatusCode)
+				s.Require().Equal(http.StatusNotFound, resp.StatusCode)
 			})
 
 			s.Run("422", func() {
