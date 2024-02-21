@@ -9,21 +9,18 @@ import (
 
 	"github.com/Saaghh/wallet/internal/apiserver"
 	"github.com/Saaghh/wallet/internal/model"
+	"github.com/Saaghh/wallet/internal/prometrics"
 	"go.uber.org/zap"
 )
 
-type metrics interface {
-	TrackExternalRequest(start time.Time, endpoint string)
-}
-
 type RemoteCurrencyConverter struct {
 	XRAddress string
-	metrics   metrics
+	metrics   *prometrics.Metrics
 }
 
 const xrEndpoint string = "/xr"
 
-func New(xrBindAddr string, metrics metrics) *RemoteCurrencyConverter {
+func New(xrBindAddr string, metrics *prometrics.Metrics) *RemoteCurrencyConverter {
 	return &RemoteCurrencyConverter{
 		XRAddress: "http://localhost" + xrBindAddr + xrEndpoint,
 		metrics:   metrics,

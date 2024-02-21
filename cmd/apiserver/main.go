@@ -56,14 +56,20 @@ func main() {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		err = server.Run(ctx)
+		if err != nil {
+			return fmt.Errorf("server.Run(ctx): %w", err)
+		}
 
-		return fmt.Errorf("server.Run(ctx): %w", err)
+		return nil
 	})
 
 	eg.Go(func() error {
 		err = serviceLayer.ArchiverRun(ctx)
+		if err != nil {
+			return fmt.Errorf("serviceLayer.ArchiverRun(ctx): %w", err)
+		}
 
-		return fmt.Errorf("serviceLayer.ArchiverRun(ctx): %w", err)
+		return nil
 	})
 
 	if err = eg.Wait(); err != nil {

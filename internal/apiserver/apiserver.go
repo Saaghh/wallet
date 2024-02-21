@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Saaghh/wallet/internal/prometrics"
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
@@ -19,18 +20,14 @@ type APIServer struct {
 	server  *http.Server
 	service service
 	key     *rsa.PublicKey
-	metrics metrics
-}
-
-type metrics interface {
-	TrackHTTPRequest(start time.Time, r *http.Request)
+	metrics *prometrics.Metrics
 }
 
 type Config struct {
 	BindAddress string
 }
 
-func New(cfg Config, service service, key *rsa.PublicKey, metrics metrics) *APIServer {
+func New(cfg Config, service service, key *rsa.PublicKey, metrics *prometrics.Metrics) *APIServer {
 	router := chi.NewRouter()
 
 	return &APIServer{
@@ -90,17 +87,17 @@ func (s *APIServer) configRouter() {
 		r.Use(s.JWTAuth)
 
 		r.Route("/v1", func(r chi.Router) {
-			r.Post("/wallets", s.createWallet)
-			r.Get("/wallets", s.getWallets)
-			r.Get("/wallets/{id}", s.getWalletByID)
-			r.Delete("/wallets/{id}", s.deleteWallet)
-			r.Patch("/wallets/{id}", s.updateWallet)
+			r.Post("/wallets", s.createWallet)        // documented
+			r.Get("/wallets", s.getWallets)           // documented
+			r.Get("/wallets/{id}", s.getWalletByID)   // documented
+			r.Delete("/wallets/{id}", s.deleteWallet) // documented
+			r.Patch("/wallets/{id}", s.updateWallet)  // documented
 
-			r.Put("/wallets/transfer", s.transfer)
-			r.Put("/wallets/deposit", s.deposit)
-			r.Put("/wallets/withdraw", s.withdraw)
+			r.Put("/wallets/transfer", s.transfer) // documented
+			r.Put("/wallets/deposit", s.deposit)   // documented
+			r.Put("/wallets/withdraw", s.withdraw) // documented
 
-			r.Get("/wallets/transactions", s.getTransactions)
+			r.Get("/wallets/transactions", s.getTransactions) // documented
 		})
 	})
 

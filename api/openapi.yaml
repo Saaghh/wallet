@@ -1,0 +1,480 @@
+openapi: 3.0.3
+info:
+  title: Wallet Server Backend
+  description: |-
+    This is a sample Pet Store Server based on the OpenAPI 3.0 specification.  You can find out more about
+    Swagger at [https://swagger.io](https://swagger.io). In the third iteration of the pet store, we've switched to the design first approach!
+    You can now help us improve the API whether it's by making changes to the definition itself or to the code.
+    That way, with time, we can improve the API in general, and expose some of the new features in OAS3.
+
+  contact:
+    email: ssa2g6mq@gmail.com
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+tags:
+  - name: Wallets
+    description: Everything about wallets
+  - name: Transactions
+    description: Everything about wallets
+paths:
+  /wallets:
+    post:
+      tags:
+        - Wallets
+      summary: Create new wallet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/createWalletRequest'
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/singleWalletResponse'
+        '422':
+          description: Wallet name was already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+    get:
+      tags:
+        - Wallets
+      summary: Get all active wallets for user
+      parameters:
+        - in: query
+          name: offset
+          schema:
+            type: integer
+          description: The number of items to skip before starting to collect the result set
+          example: 100
+        - in: query
+          name: limit
+          schema:
+            type: integer
+          description: The numbers of items to return
+          example: 20
+        - in: query
+          name: sorting
+          schema:
+            type: string
+          description: Name of the field to sort result set. Use snake_case
+          example: created_date
+        - in: query
+          name: descending
+          schema:
+            type: boolean
+          example: true
+          description: If the sorting should be descending. If param is not present order will be ascending
+        - in: query
+          name: filter
+          schema:
+            type: string
+          description: String to look for in wallet name
+          example: favourite
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getWalletsResponse'
+        '404':
+          description: No wallets found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+  /wallets/{id}:
+    get:
+      summary: Get wallet by ID
+      tags:
+        - Wallets
+      parameters:
+        - name: id
+          description: id of a wallet to be found
+          example: eec10eb7-4128-4f23-98ec-c77a08815d97
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            applcation/json:
+              schema:
+                $ref: '#/components/schemas/singleWalletResponse'
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+    patch:
+      tags:
+        - Wallets
+      parameters:
+        - name: id
+          description: id of a wallet to be pathced
+          example: eec10eb7-4128-4f23-98ec-c77a08815d97
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      summary: Update wallet data
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/createWalletRequest'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            applcation/json:
+              schema:
+                $ref: '#/components/schemas/singleWalletResponse'
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+        '422':
+          description: Wrong request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+    delete:
+      tags:
+        - Wallets
+      parameters:
+        - name: id
+          description: id of a wallet to be deleted
+          example: eec10eb7-4128-4f23-98ec-c77a08815d97
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      summary: Delete wallet
+      responses:
+        '204':
+          description: Successful operation
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+  /wallets/transfer:
+    put:
+      summary: Transfer cash from one wallet to another
+      tags:
+        - Transactions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/transferRequest'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/transferResponse'
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+        '422':
+          description: Incorrect request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+        '429':
+          description: Transaction already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+  /wallets/deposit:
+    put:
+      summary: Add cash to the wallet
+      tags:
+        - Transactions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/externalTransactionRequest'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/transferResponse'
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+        '422':
+          description: Incorrect request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+        '429':
+          description: Transaction already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+  /wallets/withdraw:
+    put:
+      summary: Remove cash from wallet
+      tags:
+        - Transactions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/externalTransactionRequest'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/transferResponse'
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+        '422':
+          description: Incorrect request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+        '429':
+          description: Transaction already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+  /wallets/transactions:
+    get:
+      summary: Get all transactions
+      tags:
+        - Transactions
+      parameters:
+        - in: query
+          name: offset
+          schema:
+            type: integer
+          description: The number of items to skip before starting to collect the result set
+          example: 100
+        - in: query
+          name: limit
+          schema:
+            type: integer
+          description: The numbers of items to return
+          example: 20
+        - in: query
+          name: sorting
+          schema:
+            type: string
+          description: Name of the field to sort result set. Use snake_case
+          example: created_date
+        - in: query
+          name: descending
+          schema:
+            type: boolean
+          example: true
+          description: If the sorting should be descending. If param is not present order will be ascending
+        - in: query
+          name: filter
+          schema:
+            type: string
+          description: String to look for in wallet name
+          example: favourite
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/transactionsResponse'
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/errorResponse'
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    transferResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            trasactionId:
+              type: string
+              format: uuid
+              example: a4522a50-155a-4044-a435-63f6972f634f
+    createWalletRequest:
+      type: object
+      required:
+        - currency
+        - name
+      properties:
+        currency:
+          type: string
+          example: USD
+        name:
+          type: string
+          example: "best wallet"
+    errorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+    singleWalletResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/wallet'
+    getWalletsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/wallet'
+    wallet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 7a31dd63-a6da-448f-a931-30f894d43f27
+        ownerId:
+          type: string
+          format: uuid
+          example: 7a279af5-8a13-4384-913c-0aed84d28a02
+        currency:
+          type: string
+          example: USD
+        balance:
+          type: number
+          format: double
+        createdDate:
+          type: string
+          format: date-time
+          example: 2024-02-19T03:09:10.276182+03:00
+        modifiedDate:
+          type: string
+          format: date-time
+          example: 2024-02-19T03:09:10.276182+03:00
+        name:
+          type: string
+          example: "best wallet"
+    transferRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: eec10eb7-4128-4f23-98ec-c77a08815d97
+        agentWalletId:
+          type: string
+          format: uuid
+          example: 7a31dd63-a6da-448f-a931-30f894d43f27
+        targetWalletId:
+          type: string
+          format: uuid
+          example: 175dfd44-e70e-40c9-9bb0-e456ec8171d8
+        currency:
+          type: string
+          example: USD
+        sum:
+          type: number
+          format: double
+          example: 200.5
+    externalTransactionRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: eec10eb7-4128-4f23-98ec-c77a08815d97
+        targetWalletId:
+          type: string
+          format: uuid
+          example: 175dfd44-e70e-40c9-9bb0-e456ec8171d8
+        currency:
+          type: string
+          example: USD
+        sum:
+          type: number
+          format: double
+          example: 300
+    transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: eec10eb7-4128-4f23-98ec-c77a08815d97
+        agentWalletId:
+          type: string
+          format: uuid
+          example: 7a31dd63-a6da-448f-a931-30f894d43f27
+        targetWalletId:
+          type: string
+          format: uuid
+          example: 175dfd44-e70e-40c9-9bb0-e456ec8171d8
+        currency:
+          type: string
+          example: USD
+        sum:
+          type: number
+          format: double
+          example: 300
+        createdAt:
+          type: string
+          format: date-time
+          example: 2024-02-19T03:09:10.276182+03:00
+    transactionsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/transaction'

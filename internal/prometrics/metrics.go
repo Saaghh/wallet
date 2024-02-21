@@ -1,11 +1,11 @@
 package prometrics
 
 import (
-	"github.com/go-chi/chi/v5"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -53,10 +53,12 @@ func New() *Metrics {
 
 func (m *Metrics) TrackHTTPRequest(start time.Time, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
 	url := r.URL.Host + r.URL.Path
 	if id != "" {
 		url = strings.Replace(url, id, "{id}", 1)
 	}
+
 	method := r.Method
 	elapsed := time.Since(start).Seconds()
 
